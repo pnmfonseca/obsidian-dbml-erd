@@ -64,7 +64,7 @@ export function parseDBML(input: string): Model {
         continue;
       }
       if (/^indexes/i.test(line)) continue;
-      const cm = line.match(/^([A-Za-z0-9_]+)\s+([A-Za-z0-9_()]+)\s*(\[.*\])?/);
+      const cm = line.match(/^([A-Za-z0-9_]+)\s+([^[\n]+?)\s*(\[.*\])?\s*$/);
       if (!cm) continue;
       const rawAttrs = cm[3] || "";
       const attrs = rawAttrs.toLowerCase();
@@ -143,4 +143,157 @@ export function setHeaderColorInLine(
 
   const bracket = filtered.length ? ` [${filtered.join(", ")}]` : "";
   return head + bracket + rest;
+}
+
+// ---- edición de textos (rename / tipo) sobre las líneas del bloque ----
+
+function esc(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// localiza [lineaDeclaracion, lineaCierre] de una tabla dentro del rango del bloque
+function findTableRange(
+  lines: string[],
+  start: number,
+  end: number,
+  name: string
+): [number, number] | null {
+  const e = esc(name);
+  const declRe = new RegExp(
+    `^\\s*(?:Table\\s+)?"?${e}"?\\s*(?:as\\s+\\w+\\s*)?(?:\\[[^\\]]*\\]\\s*)?\\{`
+  );
+  let decl = -1;
+  for (let i = start; i <= end && i < lines.length; i++) {
+    if (declRe.test(lines[i])) {
+      decl = i;
+      break;
+    }
+  }
+  if (decl < 0) return null;
+  let depth = 0;
+  let close = -1;
+  for (let i = decl; i <= end && i < lines.length; i++) {
+    for (const ch of lines[i]) {
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close >= 0) break;
+  }
+  if (close < 0) return null;
+  return [decl, close];
+}
+
+// Renombra una tabla y actualiza referencias y comentarios @pos. Muta lines.
+export function renameTableInBlock(
+  lines: string[],
+  start: number,
+  end: number,
+  oldName: string,
+  newName: string
+): boolean {
+  if (!/^[A-Za-z0-9_]+$/.test(newName)) return false;
+  const range = findTableRange(lines, start, end, oldName);
+  if (!range) return false;
+  const [decl] = range;
+  const e = esc(oldName);
+  lines[decl] = lines[decl].replace(
+    new RegExp(`^(\\s*(?:Table\\s+)?)"?${e}"?`),
+    `$1${newName}`
+  );
+  const refRe = new RegExp(`\\b${e}\\.`, "g");
+  const posRe = new RegExp(`^(\\s*//\\s*@pos\\s+)"?${e}"?(\\s)`);
+  for (let i = start; i <= end && i < lines.length; i++) {
+    if (i === decl) continue;
+    lines[i] = lines[i].replace(refRe, `${newName}.`);
+    lines[i] = lines[i].replace(posRe, `$1${newName}$2`);
+  }
+  return true;
+}
+
+// Renombra una columna de una tabla y actualiza referencias tabla.col. Muta lines.
+export function renameColumnInBlock(
+  lines: string[],
+  start: number,
+  end: number,
+  table: string,
+  oldCol: string,
+  newCol: string
+): boolean {
+  if (!/^[A-Za-z0-9_]+$/.test(newCol)) return false;
+  const range = findTableRange(lines, start, end, table);
+  if (!range) return false;
+  const [decl, close] = range;
+  const ec = esc(oldCol);
+  let found = false;
+  for (let i = decl + 1; i < close; i++) {
+    if (new RegExp(`^\\s*${ec}\\s+[A-Za-z0-9_(]`).test(lines[i])) {
+      lines[i] = lines[i].replace(
+        new RegExp(`^(\\s*)${ec}(?=\\s)`),
+        `$1${newCol}`
+      );
+      found = true;
+      break;
+    }
+  }
+  if (!found) return false;
+  const refRe = new RegExp(`\\b${esc(table)}\\.${ec}\\b`, "g");
+  for (let i = start; i <= end && i < lines.length; i++) {
+    lines[i] = lines[i].replace(refRe, `${table}.${newCol}`);
+  }
+  return true;
+}
+
+// Cambia el tipo de una columna. Muta lines.
+export function setColumnTypeInBlock(
+  lines: string[],
+  start: number,
+  end: number,
+  table: string,
+  col: string,
+  newType: string
+): boolean {
+  if (!/^[A-Za-z0-9_(),. ]+$/.test(newType)) return false;
+  const range = findTableRange(lines, start, end, table);
+  if (!range) return false;
+  const [decl, close] = range;
+  const ecol = esc(col);
+  for (let i = decl + 1; i < close; i++) {
+    const m = lines[i].match(
+      new RegExp(`^(\\s*${ecol}\\s+)([^[\\n]+?)\\s*(\\[.*\\])?\\s*$`)
+    );
+    if (m) {
+      const settings = m[3] ? ` ${m[3]}` : "";
+      lines[i] = `${m[1]}${newType.trim()}${settings}`;
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---- posiciones / vista persistidas como comentarios ----
+
+export function parsePositions(src: string): Record<string, { x: number; y: number }> {
+  const out: Record<string, { x: number; y: number }> = {};
+  const re =
+    /\/\/\s*@pos\s+"?([A-Za-z0-9_]+)"?\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    out[m[1]] = { x: parseFloat(m[2]), y: parseFloat(m[3]) };
+  }
+  return out;
+}
+
+export function parseView(src: string): { x: number; y: number; k: number } | null {
+  const m = src.match(
+    /\/\/\s*@view\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/
+  );
+  return m
+    ? { x: parseFloat(m[1]), y: parseFloat(m[2]), k: parseFloat(m[3]) }
+    : null;
 }

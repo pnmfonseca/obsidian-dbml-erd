@@ -124,3 +124,14 @@
   position: fixed;
   left: -9999px;
 }
+
+/* modal de edición de textos (renombrar / tipo) */
+.dbml-edit-input {
+  width: 100%;
+  margin: 8px 0 14px;
+}
+.dbml-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

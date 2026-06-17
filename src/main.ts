@@ -3,10 +3,22 @@ import {
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
   Menu,
+  Modal,
+  App,
   Notice,
   TFile,
 } from "obsidian";
-import { parseDBML, Model, Ref, setHeaderColorInLine } from "./parser";
+import {
+  parseDBML,
+  Model,
+  Ref,
+  setHeaderColorInLine,
+  renameTableInBlock,
+  renameColumnInBlock,
+  setColumnTypeInBlock,
+  parsePositions,
+  parseView,
+} from "./parser";
 import {
   computeLayout,
   LayoutResult,
@@ -56,8 +68,17 @@ export default class DbmlErdPlugin extends Plugin {
       wrap.empty();
       const hMatch = source.match(/\/\/\s*(?:canvas-)?height:\s*(\d+)/i);
       const height = hMatch ? parseInt(hMatch[1], 10) : undefined;
+      const savedPos = parsePositions(source);
+      const view = parseView(source);
       ctx.addChild(
-        new Diagram(wrap, model, layout, { height, plugin: this, ctx, el })
+        new Diagram(wrap, model, layout, {
+          height,
+          plugin: this,
+          ctx,
+          el,
+          savedPos,
+          view: view ?? undefined,
+        })
       );
     } catch (e) {
       wrap.setText(
@@ -73,6 +94,7 @@ class Diagram extends MarkdownRenderChild {
   private elkEdges: Pt[][]; // ruta ELK original por ref
   private view = { x: 30, y: 30, k: 1 };
   private movedTables = new Set<string>();
+  private saveTimer = 0;
   private plugin?: DbmlErdPlugin;
   private ctx?: MarkdownPostProcessorContext;
   private blockEl?: HTMLElement;
@@ -90,6 +112,8 @@ class Diagram extends MarkdownRenderChild {
       plugin?: DbmlErdPlugin;
       ctx?: MarkdownPostProcessorContext;
       el?: HTMLElement;
+      savedPos?: Record<string, { x: number; y: number }>;
+      view?: { x: number; y: number; k: number };
     }
   ) {
     super(parent);
@@ -99,6 +123,18 @@ class Diagram extends MarkdownRenderChild {
     this.plugin = opts?.plugin;
     this.ctx = opts?.ctx;
     this.blockEl = opts?.el;
+
+    // aplica posiciones guardadas (override del layout ELK)
+    if (opts?.savedPos) {
+      for (const [name, p] of Object.entries(opts.savedPos)) {
+        if (this.pos[name]) {
+          this.pos[name].x = p.x;
+          this.pos[name].y = p.y;
+          this.movedTables.add(name);
+        }
+      }
+    }
+    if (opts?.view) this.view = { ...opts.view };
 
     const host = parent.createDiv({ cls: "dbml-erd-canvas" });
     if (opts?.height) host.style.height = opts.height + "px";
@@ -119,11 +155,15 @@ class Diagram extends MarkdownRenderChild {
     this.btn(bar, "⊡", () => this.fit());
 
     this.drawNodes();
-    this.drawAllEdges();
+    this.redrawEdges();
     this.bindPanZoom(host);
     this.applyView();
-    // ajustar tras montar (necesita medidas del host)
-    activeWindow.requestAnimationFrame(() => this.fit());
+    // si no hay vista guardada, encuadrar tras montar (necesita medidas del host)
+    if (!opts?.view) activeWindow.requestAnimationFrame(() => this.fit());
+  }
+
+  onunload() {
+    if (this.saveTimer) activeWindow.clearTimeout(this.saveTimer);
   }
 
   private btn(bar: HTMLElement, label: string, cb: () => void) {
@@ -247,15 +287,6 @@ class Diagram extends MarkdownRenderChild {
   }
 
   // ---- dibujo de aristas ----
-  private drawAllEdges() {
-    while (this.edgeLayer.firstChild)
-      this.edgeLayer.removeChild(this.edgeLayer.firstChild);
-    this.model.refs.forEach((r, i) => {
-      const pts = this.elkEdges[i];
-      if (pts && pts.length >= 2) this.drawEdge(r, pts);
-    });
-  }
-
   // redibuja aristas: si cualquiera de sus extremos fue movido, usa manhattan
   // (posición actual); si no, conserva la ruta ELK original (esquiva).
   private redrawEdges() {
@@ -327,6 +358,7 @@ class Diagram extends MarkdownRenderChild {
           ROW_H,
           i % 2 ? "dbml-row alt" : "dbml-row"
         );
+        rr.setAttribute("data-col", String(i));
         g.appendChild(rr);
       });
 
@@ -352,6 +384,7 @@ class Diagram extends MarkdownRenderChild {
           c.name,
           "dbml-col" + (c.pk ? " pk" : "")
         );
+        nm.setAttribute("data-col", String(i));
         g.appendChild(nm);
         if (c.pk || c.fk) {
           const ic = this.text(
@@ -360,6 +393,7 @@ class Diagram extends MarkdownRenderChild {
             c.pk ? "🔑" : "🔗",
             "dbml-icon"
           );
+          ic.setAttribute("data-col", String(i));
           g.appendChild(ic);
         }
         let tx = NODE_W - 14;
@@ -367,13 +401,16 @@ class Diagram extends MarkdownRenderChild {
           const bw = 22;
           const b = this.rect(NODE_W - 14 - bw, y - 13, bw, 15, "dbml-badge");
           b.setAttribute("rx", "3");
+          b.setAttribute("data-col", String(i));
           g.appendChild(b);
-          g.appendChild(
-            this.text(NODE_W - 14 - bw / 2, y - 1.5, "NN", "dbml-badge-txt")
-          );
+          const bt = this.text(NODE_W - 14 - bw / 2, y - 1.5, "NN", "dbml-badge-txt");
+          bt.setAttribute("data-col", String(i));
+          g.appendChild(bt);
           tx = NODE_W - 14 - bw - 8;
         }
-        g.appendChild(this.text(tx, y, c.type, "dbml-type"));
+        const ty = this.text(tx, y, c.type, "dbml-type");
+        ty.setAttribute("data-col", String(i));
+        g.appendChild(ty);
       });
 
       this.enableDrag(g, t.name);
@@ -425,7 +462,8 @@ class Diagram extends MarkdownRenderChild {
       oy = 0,
       dragging = false,
       moved = false,
-      onHeader = false;
+      onHeader = false,
+      colIdx = -1;
     g.addEventListener("pointerdown", (ev: PointerEvent) => {
       ev.stopPropagation();
       ev.preventDefault();
@@ -435,6 +473,8 @@ class Diagram extends MarkdownRenderChild {
       onHeader =
         tgt.classList.contains("dbml-head") ||
         tgt.classList.contains("dbml-head-txt");
+      const ca = tgt.getAttribute("data-col");
+      colIdx = ca !== null ? parseInt(ca, 10) : -1;
       sx = ev.clientX;
       sy = ev.clientY;
       ox = this.pos[name].x;
@@ -456,7 +496,13 @@ class Diagram extends MarkdownRenderChild {
         dragging = false;
         window.removeEventListener("pointermove", mv);
         window.removeEventListener("pointerup", up);
-        if (!moved && onHeader) this.openHeaderMenu(name, e);
+        if (moved) {
+          this.scheduleSaveLayout();
+        } else if (onHeader) {
+          this.openHeaderMenu(name, e);
+        } else if (colIdx >= 0) {
+          this.openColumnMenu(name, colIdx, e);
+        }
       };
       window.addEventListener("pointermove", mv);
       window.addEventListener("pointerup", up);
@@ -466,6 +512,16 @@ class Diagram extends MarkdownRenderChild {
   private openHeaderMenu(name: string, evt: PointerEvent) {
     if (!this.plugin || !this.ctx || !this.blockEl) return;
     const menu = new Menu();
+    menu.addItem((i) =>
+      i
+        .setTitle("Renombrar tabla…")
+        .setIcon("pencil")
+        .onClick(() =>
+          this.promptText("Nuevo nombre de la tabla", name, (v) =>
+            this.renameTable(name, v)
+          )
+        )
+    );
     menu.addItem((i) =>
       i
         .setTitle("Elegir color…")
@@ -479,6 +535,127 @@ class Diagram extends MarkdownRenderChild {
         .onClick(() => this.setHeaderColor(name, null))
     );
     menu.showAtMouseEvent(evt);
+  }
+
+  private openColumnMenu(table: string, colIdx: number, evt: PointerEvent) {
+    if (!this.plugin || !this.ctx || !this.blockEl) return;
+    const t = this.model.tables.find((t) => t.name === table);
+    const col = t?.cols[colIdx];
+    if (!col) return;
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i
+        .setTitle("Renombrar columna…")
+        .setIcon("pencil")
+        .onClick(() =>
+          this.promptText("Nuevo nombre de la columna", col.name, (v) =>
+            this.renameColumn(table, col.name, v)
+          )
+        )
+    );
+    menu.addItem((i) =>
+      i
+        .setTitle("Cambiar tipo…")
+        .setIcon("type")
+        .onClick(() =>
+          this.promptText("Nuevo tipo de dato", col.type, (v) =>
+            this.setColType(table, col.name, v)
+          )
+        )
+    );
+    menu.showAtMouseEvent(evt);
+  }
+
+  private promptText(title: string, initial: string, cb: (v: string) => void) {
+    if (!this.plugin) return;
+    new EditModal(this.plugin.app, title, initial, cb).open();
+  }
+
+  // ---- edición de textos (rename / tipo) ----
+  private async editBlock(
+    mutate: (lines: string[], start: number, end: number) => boolean,
+    notFoundMsg: string
+  ) {
+    if (!this.plugin || !this.ctx || !this.blockEl) return;
+    const info = this.ctx.getSectionInfo(this.blockEl);
+    if (!info) {
+      new Notice("DBML ERD: no se pudo ubicar el bloque para editar.");
+      return;
+    }
+    const file = this.plugin.app.vault.getAbstractFileByPath(
+      this.ctx.sourcePath
+    );
+    if (!(file instanceof TFile)) return;
+    const content = await this.plugin.app.vault.read(file);
+    const lines = content.split("\n");
+    if (!mutate(lines, info.lineStart, info.lineEnd)) {
+      new Notice(notFoundMsg);
+      return;
+    }
+    await this.plugin.app.vault.modify(file, lines.join("\n"));
+  }
+
+  private renameTable(oldName: string, newName: string) {
+    if (newName === oldName) return;
+    this.editBlock(
+      (l, s, e) => renameTableInBlock(l, s, e, oldName, newName),
+      `No se pudo renombrar "${oldName}" (¿nombre válido? solo letras, números y _).`
+    );
+  }
+
+  private renameColumn(table: string, oldCol: string, newCol: string) {
+    if (newCol === oldCol) return;
+    this.editBlock(
+      (l, s, e) => renameColumnInBlock(l, s, e, table, oldCol, newCol),
+      "No se pudo renombrar la columna."
+    );
+  }
+
+  private setColType(table: string, col: string, newType: string) {
+    this.editBlock(
+      (l, s, e) => setColumnTypeInBlock(l, s, e, table, col, newType),
+      "No se pudo cambiar el tipo (use letras, números, _ y paréntesis)."
+    );
+  }
+
+  // ---- guardado de posiciones / vista ----
+  private scheduleSaveLayout() {
+    if (this.saveTimer) activeWindow.clearTimeout(this.saveTimer);
+    this.saveTimer = activeWindow.setTimeout(() => this.saveLayout(), 600);
+  }
+
+  private async saveLayout() {
+    if (!this.plugin || !this.ctx || !this.blockEl) return;
+    const info = this.ctx.getSectionInfo(this.blockEl);
+    if (!info) return;
+    const file = this.plugin.app.vault.getAbstractFileByPath(
+      this.ctx.sourcePath
+    );
+    if (!(file instanceof TFile)) return;
+    const content = await this.plugin.app.vault.read(file);
+    const lines = content.split("\n");
+    const open = info.lineStart;
+    const close = info.lineEnd;
+    const body = lines
+      .slice(open + 1, close)
+      .filter((l) => !/^\s*\/\/\s*@(pos|view)\b/.test(l));
+    const posLines = this.model.tables
+      .filter((t) => this.pos[t.name])
+      .map((t) => {
+        const p = this.pos[t.name];
+        return `// @pos ${t.name} ${Math.round(p.x)} ${Math.round(p.y)}`;
+      });
+    const viewLine = `// @view ${Math.round(this.view.x)} ${Math.round(
+      this.view.y
+    )} ${this.view.k.toFixed(3)}`;
+    const newLines = [
+      ...lines.slice(0, open + 1),
+      ...body,
+      ...posLines,
+      viewLine,
+      ...lines.slice(close),
+    ];
+    await this.plugin.app.vault.modify(file, newLines.join("\n"));
   }
 
   private pickColor(name: string) {
@@ -601,5 +778,54 @@ class Diagram extends MarkdownRenderChild {
       (r.width - pad * 2 - (maxX - minX) * this.view.k) / 2;
     this.view.y = pad - minY * this.view.k;
     this.applyView();
+  }
+}
+
+// Modal mínimo con un campo de texto (Enter guarda, Esc cancela).
+class EditModal extends Modal {
+  private titleText: string;
+  private initial: string;
+  private onSubmit: (v: string) => void;
+  constructor(
+    app: App,
+    titleText: string,
+    initial: string,
+    onSubmit: (v: string) => void
+  ) {
+    super(app);
+    this.titleText = titleText;
+    this.initial = initial;
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: this.titleText });
+    const input = contentEl.createEl("input", { type: "text" });
+    input.classList.add("dbml-edit-input");
+    input.value = this.initial;
+    input.focus();
+    input.select();
+    const submit = () => {
+      const v = input.value.trim();
+      this.close();
+      if (v) this.onSubmit(v);
+    };
+    input.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submit();
+      } else if (e.key === "Escape") {
+        this.close();
+      }
+    });
+    const bar = contentEl.createDiv({ cls: "dbml-edit-actions" });
+    const ok = bar.createEl("button", { text: "Guardar" });
+    ok.classList.add("mod-cta");
+    ok.onclick = submit;
+    const cancel = bar.createEl("button", { text: "Cancelar" });
+    cancel.onclick = () => this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
   }
 }

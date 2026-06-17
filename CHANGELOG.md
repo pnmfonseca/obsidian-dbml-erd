@@ -2,6 +2,13 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.9] - 2026-06-17
+
+### Agregado
+
+- **Edición de textos desde el diagrama**: clic en el encabezado de una tabla → "Renombrar tabla…"; clic en una columna → "Renombrar columna…" o "Cambiar tipo…". Los cambios se escriben de vuelta en el bloque DBML. Al renombrar tablas o columnas, se actualizan también las referencias (`Ref:` e inline) para no romper las relaciones.
+- **Persistencia de posiciones**: las tablas que mueves se guardan como comentarios `// @pos` dentro del bloque (y la vista como `// @view`), de modo que al cerrar y reabrir la nota quedan donde las dejaste. El guardado ocurre al soltar la tabla (con debounce) y la vista se restaura para evitar saltos al re-renderizar.
+
 ## [0.1.8] - 2026-06-17
 
 ### Corregido

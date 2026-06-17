@@ -1,0 +1,117 @@
+.dbml-erd-wrap {
+  width: 100%;
+}
+
+.dbml-erd-canvas {
+  position: relative;
+  width: 100%;
+  height: var(--dbml-erd-height, 480px);
+  resize: vertical;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--background-primary);
+  background-image: radial-gradient(
+    var(--background-modifier-border) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  cursor: grab;
+}
+.dbml-erd-canvas.panning {
+  cursor: grabbing;
+}
+
+.dbml-erd-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* tablas */
+.dbml-node {
+  cursor: move;
+}
+.dbml-body {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  stroke-width: 1;
+}
+.dbml-row {
+  fill: transparent;
+}
+.dbml-row.alt {
+  fill: var(--background-primary-alt);
+}
+.dbml-head {
+  fill: var(--interactive-accent);
+}
+.dbml-head-txt {
+  fill: var(--text-on-accent);
+  font-weight: 700;
+  font-size: 13px;
+}
+.dbml-col {
+  fill: var(--text-normal);
+  font-size: 12.5px;
+}
+.dbml-col.pk {
+  font-weight: 700;
+}
+.dbml-type {
+  fill: var(--text-muted);
+  font-size: 11.5px;
+  text-anchor: end;
+}
+.dbml-icon {
+  font-size: 11px;
+}
+.dbml-badge {
+  fill: var(--background-modifier-border);
+}
+.dbml-badge-txt {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+/* aristas */
+.dbml-edge {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+.dbml-marker {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  fill: none;
+}
+.dbml-marker-circle {
+  fill: var(--background-primary);
+}
+
+/* toolbar */
+.dbml-erd-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+.dbml-erd-toolbar button {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+.dbml-erd-toolbar button:hover {
+  border-color: var(--interactive-accent);
+}

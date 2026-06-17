@@ -1,0 +1,38 @@
+# Changelog
+
+Formato basado en [Keep a Changelog](https://keepachangelog.com/).
+
+## [0.1.3] - 2026-06-17
+
+### Cambiado
+
+- Notación de cardinalidad de un solo símbolo por extremo, igual a dbdiagram.io.
+- El lado "uno" se deriva de la nullabilidad de la FK: barra (`│`) si es `not null`, círculo (`○`) si es nullable.
+- El lado "muchos" dibuja solo la pata de gallo (el esquema no conoce el mínimo).
+
+## [0.1.2] - 2026-06-17
+
+### Agregado
+
+- Lienzo redimensionable (manija) y directiva `// height: N` por diagrama.
+- Variable CSS `--dbml-erd-height` para altura global.
+
+### Cambiado
+
+- Notación de relaciones a círculo + barra (0..1) en el lado "uno".
+
+## [0.1.1] - 2026-06-17
+
+### Corregido
+
+- Las relaciones de tablas ya movidas dejaban de seguir sus extremos al arrastrar otra tabla. Ahora toda arista que toque una tabla movida se re-rutea con manhattan.
+
+## [0.1.0] - 2026-06-17
+
+### Agregado
+
+- Render de bloques `dbml` / `DBML` a ERD en SVG.
+- Layout automático con elkjs (`elk.layered`, ruteo ortogonal).
+- Ruteo híbrido: ELK al cargar, manhattan al arrastrar.
+- Tablas arrastrables, pan, zoom, ajustar.
+- Iconos PK / FK, badge `NN`, tema integrado con variables de Obsidian.

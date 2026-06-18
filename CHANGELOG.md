@@ -9,6 +9,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 - **Edición de textos desde el diagrama**: clic en el encabezado de una tabla → "Renombrar tabla…"; clic en una columna → "Renombrar columna…" o "Cambiar tipo…". Los cambios se escriben de vuelta en el bloque DBML. Al renombrar tablas o columnas, se actualizan también las referencias (`Ref:` e inline) para no romper las relaciones.
 - **Persistencia de posiciones**: las tablas que mueves se guardan como comentarios `// @pos` dentro del bloque (y la vista como `// @view`), de modo que al cerrar y reabrir la nota quedan donde las dejaste. El guardado ocurre al soltar la tabla (con debounce) y la vista se restaura para evitar saltos al re-renderizar.
 
+### Cambiado
+
+- `minAppVersion` sube a `1.6.0`: la edición y el guardado usan `vault.process` (lectura-modificación-escritura atómica) en vez de `read`+`modify`.
+- Listeners del arrastre migrados a *pointer capture* sobre el propio nodo; el resto usa `registerDomEvent`/`activeWindow` (sin fugas, compatible con ventanas emergentes).
+- Colores de encabezado y alto del lienzo aplicados vía variables CSS (`--dbml-head-fill`, `--dbml-erd-height`) en vez de estilos en línea.
+
+### Corregido
+
+- El parser ya no se rompe con `//` ni llaves dentro de cadenas (`note: '...'`), bloques `indexes { }`, apóstrofos sueltos ni notas triple-comilla; el cuerpo de la tabla se delimita contando llaves.
+- Referencias a tablas/columnas inexistentes se descartan en vez de tirar todo el diagrama; las relaciones duplicadas se deduplican.
+- Renombrar una tabla ya no corrompe el texto de notas que contienen `nombre.`; los colores con nombre/`rgb()` calculan bien el color de texto legible.
+- El color de encabezado se puede fijar aunque la `{` esté en la línea siguiente.
+
 ## [0.1.8] - 2026-06-17
 
 ### Corregido

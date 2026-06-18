@@ -73,8 +73,9 @@ Para publicar una versión nueva: subí el `version` en `manifest.json` y `packa
 creá un tag con ese número exacto (sin prefijo `v`) y empujalo:
 
 ```bash
-git tag 0.1.3
-git push origin 0.1.3
+# usá el número exacto del manifest, sin prefijo v
+git tag 0.1.9
+git push origin 0.1.9
 ```
 
 El workflow compila y adjunta `main.js`, `manifest.json` y `styles.css` al release.

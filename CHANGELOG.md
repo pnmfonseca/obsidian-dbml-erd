@@ -2,6 +2,12 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.10] - 2026-06-18
+
+### Agregado
+
+- **Persistencia del tamaño del lienzo**: al redimensionar el diagrama arrastrando su esquina (ahora `resize: both`, ancho y alto), el tamaño se guarda como comentario `// @size <ancho> <alto>` dentro del bloque, junto a `// @view` y `// @pos`. Al reabrir la nota el lienzo recupera el tamaño elegido. Solo se persisten dimensiones fijadas por el usuario (px en línea), de modo que cambiar el ancho del panel de Obsidian no altera lo guardado.
+
 ## [0.1.9] - 2026-06-17
 
 ### Agregado

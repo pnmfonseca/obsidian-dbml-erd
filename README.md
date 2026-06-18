@@ -13,7 +13,7 @@ Plugin de Obsidian que renderiza bloques de código ` ```dbml ` como diagramas e
 - Iconos PK / FK, badge `NN`.
 - **Color de encabezado interactivo**: clic en el encabezado de una tabla → menú para elegir o quitar color; se guarda solo en el bloque DBML.
 
-- Pan (arrastrar vacío), zoom (rueda), botón de ajustar, lienzo redimensionable.
+- Pan (arrastrar vacío), zoom (rueda), botón de ajustar, lienzo redimensionable (ancho y alto). El tamaño, el zoom y el desplazamiento se guardan dentro del bloque (`// @size`, `// @view`) y se restauran al reabrir la nota.
 - Tema integrado con las variables de Obsidian (claro/oscuro automático).
 
 ## Uso
@@ -74,8 +74,8 @@ creá un tag con ese número exacto (sin prefijo `v`) y empujalo:
 
 ```bash
 # usá el número exacto del manifest, sin prefijo v
-git tag 0.1.9
-git push origin 0.1.9
+git tag 0.1.10
+git push origin 0.1.10
 ```
 
 El workflow compila y adjunta `main.js`, `manifest.json` y `styles.css` al release.

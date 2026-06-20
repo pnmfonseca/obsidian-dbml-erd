@@ -37,6 +37,10 @@ export default class DbmlErdPlugin extends Plugin {
   // arista seleccionada por bloque (sourcePath#lineStart); sobrevive a los
   // re-render del code block para no perder los handles al guardar el layout.
   selByBlock = new Map<string, string | undefined>();
+  // cache de layout ELK por estructura DBML (ignorando @pos/@view/@size/@edge):
+  // así los re-render que dispara guardar el layout no recalculan ELK ni
+  // muestran el placeholder async (esa pausa era el "parpadeo" visible).
+  private layoutCache = new Map<string, LayoutResult>();
 
   async onload() {
     const handler = (
@@ -53,33 +57,55 @@ export default class DbmlErdPlugin extends Plugin {
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext
   ) {
-    el.empty();
-    const wrap = el.createDiv({ cls: "dbml-erd-wrap" });
-    wrap.setText("Renderizando ERD…");
     let model: Model;
     try {
       model = parseDBML(source);
     } catch (e) {
-      wrap.setText(
+      el.empty();
+      el.createDiv({ cls: "dbml-erd-wrap" }).setText(
         "Error de parseo: " + (e instanceof Error ? e.message : String(e))
       );
       return;
     }
     if (model.tables.length === 0) {
-      wrap.setText("DBML sin tablas.");
+      el.empty();
+      el.createDiv({ cls: "dbml-erd-wrap" }).setText("DBML sin tablas.");
       return;
     }
     try {
-      const layout = await computeLayout(model);
-      wrap.empty();
+      // El layout ELK depende solo de la estructura DBML, no de las anotaciones
+      // de disposición; al ignorarlas en la clave, un re-render por guardado
+      // reusa el layout cacheado y se renderiza sin pausa async (sin parpadeo).
+      const layoutKey = source
+        .replace(/^[ \t]*\/\/[ \t]*@(pos|view|size|edge)\b.*$/gm, "")
+        .trim();
+      let layout = this.layoutCache.get(layoutKey);
+      if (!layout) {
+        // primer cálculo: muestra placeholder mientras ELK trabaja (async)
+        el.empty();
+        el.createDiv({ cls: "dbml-erd-wrap" }).setText("Renderizando ERD…");
+        layout = await computeLayout(model);
+        this.layoutCache.set(layoutKey, layout);
+      }
+      el.empty();
+      const wrap = el.createDiv({ cls: "dbml-erd-wrap" });
       const hMatch = source.match(/\/\/\s*(?:canvas-)?height:\s*(\d+)/i);
       const height = hMatch ? parseInt(hMatch[1], 10) : undefined;
       const savedPos = parsePositions(source);
       const view = parseView(source);
       const size = parseSize(source);
       const savedEdges = parseEdges(source);
+      // clona los nodos del layout cacheado: el Diagram (savedPos y el arrastre)
+      // muta las posiciones, y la cache debe quedar prístina para otros render.
+      const freshNodes: LayoutResult["nodes"] = {};
+      for (const [k, v] of Object.entries(layout.nodes))
+        freshNodes[k] = { ...v };
+      const layoutForInstance: LayoutResult = {
+        nodes: freshNodes,
+        edges: layout.edges,
+      };
       ctx.addChild(
-        new Diagram(wrap, model, layout, {
+        new Diagram(wrap, model, layoutForInstance, {
           height,
           plugin: this,
           ctx,
@@ -91,7 +117,8 @@ export default class DbmlErdPlugin extends Plugin {
         })
       );
     } catch (e) {
-      wrap.setText(
+      el.empty();
+      el.createDiv({ cls: "dbml-erd-wrap" }).setText(
         "Error de layout: " + (e instanceof Error ? e.message : String(e))
       );
     }
@@ -751,20 +778,26 @@ class Diagram extends MarkdownRenderChild {
           x: ox + (e.clientX - sx) / this.view.k,
           y: oy + (e.clientY - sy) / this.view.k,
         };
-        // snap a ortogonal: forma L con vecinos (un eje de cada). Durante el
-        // arrastre seedCustom dejó base = actual, así que estos midpoints están
-        // en el mismo frame que las anclas.
+        // snap suave de alineación: el punto se mueve libre, pero si queda cerca
+        // (umbral en px de pantalla) de alinear su X o su Y con un vecino, se
+        // engancha en ese eje. Así se logra ortogonal cuando se busca, sin
+        // forzarlo ni colapsar el punto sobre el vecino (antes "se borraban").
         const anc = this.currentAnchors(r, mids);
         if (anc) {
-          const prevPt =
-            wp === 0 ? { x: anc.ax, y: anc.ay } : mids[wp - 1];
+          const prevPt = wp === 0 ? { x: anc.ax, y: anc.ay } : mids[wp - 1];
           const nextPt =
             wp === mids.length - 1 ? { x: anc.bx, y: anc.by } : mids[wp + 1];
-          const opt1 = { x: prevPt.x, y: nextPt.y };
-          const opt2 = { x: nextPt.x, y: prevPt.y };
-          const d1 = Math.hypot(mids[wp].x - opt1.x, mids[wp].y - opt1.y);
-          const d2 = Math.hypot(mids[wp].x - opt2.x, mids[wp].y - opt2.y);
-          mids[wp] = d1 < d2 ? opt1 : opt2;
+          const thr = 7 / this.view.k;
+          let { x, y } = mids[wp];
+          const dxP = Math.abs(x - prevPt.x);
+          const dxN = Math.abs(x - nextPt.x);
+          if (dxP <= thr && dxP <= dxN) x = prevPt.x;
+          else if (dxN <= thr) x = nextPt.x;
+          const dyP = Math.abs(y - prevPt.y);
+          const dyN = Math.abs(y - nextPt.y);
+          if (dyP <= thr && dyP <= dyN) y = prevPt.y;
+          else if (dyN <= thr) y = nextPt.y;
+          mids[wp] = { x, y };
         }
         el.setAttribute("cx", String(mids[wp].x));
         el.setAttribute("cy", String(mids[wp].y));
@@ -1305,8 +1338,11 @@ class Diagram extends MarkdownRenderChild {
 
   // lee px inline explícitos; ignora "", "100%", "auto", etc.
   private readPx(v?: string): number {
-    const m = /^(\d+)px$/.exec(v ?? "");
-    return m ? parseInt(m[1], 10) : NaN;
+    // acepta px fraccionarios (p.ej. "400.5px") y redondea: el navegador puede
+    // fijar tamaños sub-pixel al redimensionar; si no, @size no se persistía y
+    // la altura revertía al default en cada re-render.
+    const m = /^(\d+(?:\.\d+)?)px$/.exec(v ?? "");
+    return m ? Math.round(parseFloat(m[1])) : NaN;
   }
 
   // persiste el tamaño del lienzo cuando el usuario lo redimensiona (handle CSS).

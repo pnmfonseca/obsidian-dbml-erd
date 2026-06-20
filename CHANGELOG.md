@@ -2,6 +2,14 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.16] - 2026-06-20
+
+### Corregido
+
+- **Parpadeo al re-renderizar (causa real)**: cada re-render del bloque recalculaba el layout ELK de forma asíncrona, mostrando el placeholder "Renderizando ERD…" un instante; ese hueco era el parpadeo visible. Ahora el layout se cachea por estructura DBML (ignorando las anotaciones `@pos`/`@view`/`@size`/`@edge`), de modo que los re-render provocados por guardar la disposición reutilizan el layout y se dibujan de forma síncrona, sin pausa.
+- **Mover quiebres: imán ortogonal demasiado agresivo**: el ajuste en "L" forzaba *siempre* el punto arrastrado a un codo, impidiendo moverlo libre/horizontal/verticalmente y colapsándolo sobre un vecino (parecía que se "eliminaban"), además de dejar esquinas rectas. Ahora el punto se mueve libre y solo se engancha a un eje cuando queda cerca (umbral de ~7px de pantalla) de alinearse con un vecino, conservando las esquinas redondeadas.
+- **Redimensionar el lienzo hacia abajo**: `@size` no se persistía cuando el navegador fijaba tamaños sub-pixel (p.ej. `400.5px`), así que la altura revertía al valor por defecto en cada re-render. Ahora se aceptan px fraccionarios y se redondean.
+
 ## [0.1.15] - 2026-06-19
 
 ### Corregido

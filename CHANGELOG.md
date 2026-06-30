@@ -1,161 +1,167 @@
 # Changelog
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/).
+Format based on [Keep a Changelog](https://keepachangelog.com/).
+
+## [Unreleased]
+
+### Added
+
+- **Interface language (English/Spanish)**: menus, dialogs and notices can be shown in English (default) or Spanish. A new setting under **Settings → Community plugins → DBML ER Diagrams → Language** switches it. Strings live in `src/i18n.ts` behind a `t()` lookup.
 
 ## [0.1.19] - 2026-06-22
 
-### Añadido
+### Added
 
-- **Cambiar tipo de relación (cardinalidad)**: el menú de la línea (clic en la conexión seleccionada) permite elegir uno a muchos, muchos a uno, uno a uno o muchos a muchos. Marca la opción actual y reescribe el operador (`<`, `>`, `-`, `<>`) en el bloque dbml, ya sea en la forma independiente `Ref:` o inline en la columna; los marcadores (pata de gallo / barra) se actualizan en consecuencia.
+- **Change relationship type (cardinality)**: the line menu (click on the selected connection) lets you choose one to many, many to one, one to one or many to many. It checks the current option and rewrites the operator (`<`, `>`, `-`, `<>`) in the dbml block, whether in the standalone `Ref:` form or inline on the column; the markers (crow's foot / bar) update accordingly.
 
 ## [0.1.18] - 2026-06-22
 
-### Añadido
+### Added
 
-- **Eliminar tabla**: el menú de la cabecera del nodo (junto a renombrar/color) ofrece "Eliminar tabla…", con diálogo de confirmación. Borra del bloque dbml la declaración de la tabla junto con sus anotaciones `@pos`/`@edge` y las relaciones `Ref:` independientes que la referencian en cualquier extremo.
-- **Eliminar vértice**: con la línea seleccionada, el menú contextual (clic derecho) de un vértice de la ruta ofrece "Eliminar vértice". Reusa el mismo flujo que insertar (rebake al frame actual → mutar → guardar); si era el último vértice, la conexión vuelve al ruteo automático.
+- **Delete table**: the node header menu (next to rename/color) offers "Delete table…", with a confirmation dialog. It removes the table declaration from the dbml block along with its `@pos`/`@edge` annotations and the standalone `Ref:` relationships that reference it on either end.
+- **Delete vertex**: with the line selected, the context menu (right-click) of a route vertex offers "Delete vertex". It reuses the same flow as inserting (rebake to the current frame → mutate → save); if it was the last vertex, the connection returns to automatic routing.
 
 ## [0.1.17] - 2026-06-20
 
-### Cambiado
+### Changed
 
-- **Ruteo siempre ortogonal (90°)**: arrastrar un punto de quiebre ya no produce ángulos oblicuos. El punto se mueve libre en cualquier dirección, pero la línea se *ortogonaliza* al dibujarla: entre cada par de puntos que no estén alineados se inserta un codo (`(b.x, a.y)`, "horizontal primero"), de modo que cada quiebre que arrastrás queda como esquina real de 90° (entra en vertical, sale en horizontal). Los dos extremos (puertos de columna) no se modifican; solo se adapta la ruta intermedia. Se eliminan puntos colineales/duplicados para conservar las esquinas redondeadas. Reemplaza el imán suave de 0.1.16, que permitía ángulos arbitrarios.
+- **Always orthogonal (90°) routing**: dragging a bend point no longer produces oblique angles. The point moves freely in any direction, but the line is *orthogonalized* when drawn: between each pair of points that are not aligned an elbow is inserted (`(b.x, a.y)`, "horizontal first"), so each bend you drag becomes a real 90° corner (it enters vertically, leaves horizontally). The two endpoints (column ports) are not modified; only the intermediate route is adapted. Collinear/duplicate points are removed to preserve the rounded corners. This replaces the soft magnet of 0.1.16, which allowed arbitrary angles.
 
 ## [0.1.16] - 2026-06-20
 
-### Corregido
+### Fixed
 
-- **Parpadeo al re-renderizar (causa real)**: cada re-render del bloque recalculaba el layout ELK de forma asíncrona, mostrando el placeholder "Renderizando ERD…" un instante; ese hueco era el parpadeo visible. Ahora el layout se cachea por estructura DBML (ignorando las anotaciones `@pos`/`@view`/`@size`/`@edge`), de modo que los re-render provocados por guardar la disposición reutilizan el layout y se dibujan de forma síncrona, sin pausa.
-- **Mover quiebres: imán ortogonal demasiado agresivo**: el ajuste en "L" forzaba *siempre* el punto arrastrado a un codo, impidiendo moverlo libre/horizontal/verticalmente y colapsándolo sobre un vecino (parecía que se "eliminaban"), además de dejar esquinas rectas. Ahora el punto se mueve libre y solo se engancha a un eje cuando queda cerca (umbral de ~7px de pantalla) de alinearse con un vecino, conservando las esquinas redondeadas.
-- **Redimensionar el lienzo hacia abajo**: `@size` no se persistía cuando el navegador fijaba tamaños sub-pixel (p.ej. `400.5px`), así que la altura revertía al valor por defecto en cada re-render. Ahora se aceptan px fraccionarios y se redondean.
+- **Flicker on re-render (real cause)**: every re-render of the block recomputed the ELK layout asynchronously, briefly showing the "Rendering ERD…" placeholder; that gap was the visible flicker. The layout is now cached by DBML structure (ignoring the `@pos`/`@view`/`@size`/`@edge` annotations), so re-renders triggered by saving the layout reuse it and are drawn synchronously, without a pause.
+- **Moving bends: orthogonal magnet too aggressive**: the "L" snap *always* forced the dragged point to an elbow, preventing free/horizontal/vertical movement and collapsing it onto a neighbor (it looked like they were being "deleted"), besides leaving square corners. The point now moves freely and only snaps to an axis when it is close (~7px screen threshold) to aligning with a neighbor, keeping the rounded corners.
+- **Resizing the canvas downward**: `@size` was not persisted when the browser set sub-pixel sizes (e.g. `400.5px`), so the height reverted to the default on each re-render. Fractional px are now accepted and rounded.
 
 ## [0.1.15] - 2026-06-19
 
-### Corregido
+### Fixed
 
-- **Parpadeo y deselección continua**: `saveLayout` reescribía el bloque en cada llamada aunque el contenido no hubiera cambiado; cada escritura dispara un evento `modify` de Obsidian que re-renderiza el code block (nueva instancia → se pierde la arista seleccionada y sus handles, con parpadeo periódico). Ahora se lee el contenido actual y solo se persiste si el bloque realmente cambió (guarda idempotente), cortando el bucle de re-render.
-- **No se podían crear quiebres con un clic**: los tiradores de inserción ("+" en medio de cada tramo) solo añadían un punto al *arrastrar* (umbral de 3px); un toque/clic sin movimiento no hacía nada. Ahora un clic sobre un tirador de inserción crea el quiebre en ese punto, además del arrastre que ya existía.
-- **La selección de arista sobrevive al re-render**: la arista con handles visibles se recuerda por bloque (`sourcePath#línea`) y se restaura al re-montar el diagrama, de modo que guardar el layout (o añadir varios nodos seguidos) ya no oculta los handles.
+- **Flicker and continuous deselection**: `saveLayout` rewrote the block on every call even when the content had not changed; each write fires an Obsidian `modify` event that re-renders the code block (new instance → the selected edge and its handles are lost, with periodic flicker). Now the current content is read and only persisted if the block actually changed (idempotent save), breaking the re-render loop.
+- **Bends could not be created with a click**: the insertion handles ("+" in the middle of each segment) only added a point when *dragging* (3px threshold); a tap/click without movement did nothing. Now a click on an insertion handle creates the bend at that point, in addition to the existing drag.
+- **Edge selection survives re-render**: the edge with visible handles is remembered per block (`sourcePath#line`) and restored when the diagram remounts, so saving the layout (or adding several nodes in a row) no longer hides the handles.
 
 ## [0.1.14] - 2026-06-19
 
-### Corregido
+### Fixed
 
-- **Los quiebres ahora se mueven con las tablas**: antes, al crear un punto de quiebre en una conexión, esos puntos quedaban fijos en coordenadas absolutas; al mover una tabla solo se reanclaban los extremos y la ruta se veía rota/congelada. Ahora los waypoints intermedios se guardan respecto a un *frame base* (las anclas de los dos extremos cuando se autorizó la ruta) y se estiran afín-mente (interpolación independiente en X e Y) cuando se mueve cualquiera de las dos tablas, deformando toda la conexión de forma natural. Al empezar a arrastrar un tirador la ruta se "rebakea" al frame actual para que el arrastre y el imán ortogonal trabajen en las mismas coordenadas que se ven. Las rutas `@edge` se serializan ya mapeadas al frame actual, así coinciden con `@pos` y al recargar el mapeo arranca en identidad.
+- **Bends now move with the tables**: previously, when creating a bend point on a connection, those points stayed fixed at absolute coordinates; when a table was moved only the endpoints re-anchored and the route looked broken/frozen. Now the intermediate waypoints are stored relative to a *base frame* (the anchors of the two endpoints when the route was authorized) and stretched affine-ly (independent interpolation in X and Y) when either table is moved, deforming the whole connection naturally. When you start dragging a handle the route is "rebaked" to the current frame so the drag and the orthogonal magnet work in the same coordinates you see. `@edge` routes are serialized already mapped to the current frame, so they match `@pos` and on reload the mapping starts as identity.
 
 ## [0.1.13] - 2026-06-19
 
-### Cambiado
+### Changed
 
-- **Imán ortogonal al arrastrar tiradores**: al mover un punto de quiebre de una conexión, ahora se ajusta automáticamente al codo en "L" más cercano respecto a sus vecinos (uno de los ejes hereda la X del punto previo y el otro la Y del siguiente, o viceversa, según cuál quede más cerca). Mantiene los tramos perpendiculares estilo dbdiagram.io sin tener que alinear a mano. Los extremos se reanclan a los puertos de columna actuales con la misma lógica que el ruteo guardado.
+- **Orthogonal magnet when dragging handles**: when moving a bend point of a connection, it now snaps automatically to the nearest "L" elbow relative to its neighbors (one axis inherits the X of the previous point and the other the Y of the next, or vice versa, whichever ends up closer). It keeps the perpendicular dbdiagram.io-style segments without manual alignment. The endpoints re-anchor to the current column ports with the same logic as saved routing.
 
 ## [0.1.12] - 2026-06-19
 
-### Agregado
+### Added
 
-- **Conexiones editables a mano**: tocá una relación para seleccionarla; aparecen tiradores (handles) en cada quiebre y en el medio de cada tramo. Arrastrá un tirador para doblar la curva o usá el del medio de un tramo para insertar un nuevo punto. La ruta se guarda como comentario `// @edge` dentro del bloque (junto a `@pos`/`@view`/`@size`) y se restaura al reabrir la nota. Tocando otra vez una relación seleccionada se abre un menú con "Restablecer ruta" (volver a automático) y "Deseleccionar".
+- **Hand-editable connections**: tap a relationship to select it; handles appear at each bend and in the middle of each segment. Drag a handle to bend the curve or use the mid-segment one to insert a new point. The route is saved as a `// @edge` comment inside the block (next to `@pos`/`@view`/`@size`) and restored when you reopen the note. Tapping a selected relationship again opens a menu with "Reset route" (back to automatic) and "Deselect".
 
-### Cambiado
+### Changed
 
-- **Evasión de colisiones al mover tablas**: el ruteo manual (`manhattan`) ahora elige el canal vertical más cercano que no atraviese *otras* tablas, no solo las dos conectadas. Antes una conexión podía cruzar por encima de tablas intermedias tras mover una tabla.
-- Las rutas `@edge` se actualizan al renombrar tablas o columnas, y se descartan si la relación deja de existir en el DBML.
+- **Collision avoidance when moving tables**: manual routing (`manhattan`) now picks the nearest vertical channel that does not cross *other* tables, not just the two connected ones. Previously a connection could cross over intermediate tables after moving a table.
+- `@edge` routes update when renaming tables or columns, and are discarded if the relationship no longer exists in the DBML.
 
 ## [0.1.11] - 2026-06-19
 
-### Corregido
+### Fixed
 
-- **Menús de edición en móvil (Android)**: el menú emergente de "Renombrar tabla/columna" y "Elegir color" aparecía y se cerraba al instante en táctil. El `pointerup` que abría el menú seguía propagándose hasta `document`, donde el menú de Obsidian registra su listener de auto-cierre. Ahora se detiene la propagación (`stopPropagation`/`preventDefault`) y la apertura se difiere un tick, de modo que el menú permanece abierto.
+- **Edit menus on mobile (Android)**: the "Rename table/column" and "Pick color" pop-up menu appeared and closed instantly on touch. The `pointerup` that opened the menu kept propagating up to `document`, where the Obsidian menu registers its auto-close listener. Propagation is now stopped (`stopPropagation`/`preventDefault`) and the opening is deferred one tick, so the menu stays open.
 
 ## [0.1.10] - 2026-06-18
 
-### Agregado
+### Added
 
-- **Persistencia del tamaño del lienzo**: al redimensionar el diagrama arrastrando su esquina (ahora `resize: both`, ancho y alto), el tamaño se guarda como comentario `// @size <ancho> <alto>` dentro del bloque, junto a `// @view` y `// @pos`. Al reabrir la nota el lienzo recupera el tamaño elegido. Solo se persisten dimensiones fijadas por el usuario (px en línea), de modo que cambiar el ancho del panel de Obsidian no altera lo guardado.
+- **Canvas size persistence**: when resizing the diagram by dragging its corner (now `resize: both`, width and height), the size is saved as a `// @size <width> <height>` comment inside the block, next to `// @view` and `// @pos`. On reopening the note the canvas restores the chosen size. Only user-set dimensions (inline px) are persisted, so changing the Obsidian panel width does not alter what was saved.
 
 ## [0.1.9] - 2026-06-17
 
-### Agregado
+### Added
 
-- **Edición de textos desde el diagrama**: clic en el encabezado de una tabla → "Renombrar tabla…"; clic en una columna → "Renombrar columna…" o "Cambiar tipo…". Los cambios se escriben de vuelta en el bloque DBML. Al renombrar tablas o columnas, se actualizan también las referencias (`Ref:` e inline) para no romper las relaciones.
-- **Persistencia de posiciones**: las tablas que mueves se guardan como comentarios `// @pos` dentro del bloque (y la vista como `// @view`), de modo que al cerrar y reabrir la nota quedan donde las dejaste. El guardado ocurre al soltar la tabla (con debounce) y la vista se restaura para evitar saltos al re-renderizar.
+- **Text editing from the diagram**: click a table header → "Rename table…"; click a column → "Rename column…" or "Change type…". Changes are written back to the DBML block. When renaming tables or columns, references (`Ref:` and inline) are updated too so relationships don't break.
+- **Position persistence**: tables you move are saved as `// @pos` comments inside the block (and the view as `// @view`), so closing and reopening the note keeps them where you left them. Saving happens on table drop (debounced) and the view is restored to avoid jumps on re-render.
 
-### Cambiado
+### Changed
 
-- `minAppVersion` sube a `1.6.0`: la edición y el guardado usan `vault.process` (lectura-modificación-escritura atómica) en vez de `read`+`modify`.
-- Listeners del arrastre migrados a *pointer capture* sobre el propio nodo; el resto usa `registerDomEvent`/`activeWindow` (sin fugas, compatible con ventanas emergentes).
-- Colores de encabezado y alto del lienzo aplicados vía variables CSS (`--dbml-head-fill`, `--dbml-erd-height`) en vez de estilos en línea.
+- `minAppVersion` bumped to `1.6.0`: editing and saving use `vault.process` (atomic read-modify-write) instead of `read`+`modify`.
+- Drag listeners migrated to *pointer capture* on the node itself; the rest uses `registerDomEvent`/`activeWindow` (no leaks, compatible with pop-out windows).
+- Header colors and canvas height applied via CSS variables (`--dbml-head-fill`, `--dbml-erd-height`) instead of inline styles.
 
-### Corregido
+### Fixed
 
-- El parser ya no se rompe con `//` ni llaves dentro de cadenas (`note: '...'`), bloques `indexes { }`, apóstrofos sueltos ni notas triple-comilla; el cuerpo de la tabla se delimita contando llaves.
-- Referencias a tablas/columnas inexistentes se descartan en vez de tirar todo el diagrama; las relaciones duplicadas se deduplican.
-- Renombrar una tabla ya no corrompe el texto de notas que contienen `nombre.`; los colores con nombre/`rgb()` calculan bien el color de texto legible.
-- El color de encabezado se puede fijar aunque la `{` esté en la línea siguiente.
+- The parser no longer breaks on `//` or braces inside strings (`note: '...'`), `indexes { }` blocks, loose apostrophes or triple-quote notes; the table body is delimited by counting braces.
+- References to nonexistent tables/columns are discarded instead of dropping the whole diagram; duplicate relationships are deduplicated.
+- Renaming a table no longer corrupts the text of notes containing `name.`; named/`rgb()` colors compute the readable text color correctly.
+- The header color can be set even if the `{` is on the next line.
 
 ## [0.1.8] - 2026-06-17
 
-### Corregido
+### Fixed
 
-- Los estilos estáticos del input de color (`position`, `left`) se movieron a la clase CSS `.dbml-color-input`, resolviendo el error `obsidianmd/no-static-styles-assignment` de la revisión de Obsidian.
+- The static styles of the color input (`position`, `left`) were moved to the `.dbml-color-input` CSS class, resolving the `obsidianmd/no-static-styles-assignment` error from the Obsidian review.
 
 ## [0.1.7] - 2026-06-17
 
-### Cambiado
+### Changed
 
-- Limpieza para la revisión de Obsidian: tipos de ELK sin `any` (`ElkNode`/`ElkPort`/`ElkExtendedEdge`), `document`/`requestAnimationFrame` reemplazados por `activeDocument`/`activeWindow` (compatibilidad con ventanas emergentes), aserciones de tipo innecesarias removidas, nombre del plugin sin mayúsculas totales.
-- Workflow de release con atestación de procedencia de artefactos (`attest-build-provenance`).
+- Cleanup for the Obsidian review: ELK types without `any` (`ElkNode`/`ElkPort`/`ElkExtendedEdge`), `document`/`requestAnimationFrame` replaced by `activeDocument`/`activeWindow` (compatibility with pop-out windows), unnecessary type assertions removed, plugin name without all-caps.
+- Release workflow with artifact build provenance attestation (`attest-build-provenance`).
 
 ## [0.1.6] - 2026-06-17
 
-### Agregado
+### Added
 
-- Paleta interactiva: clic en el encabezado de una tabla abre un menú para **elegir** o **quitar** color. El plugin escribe `[headercolor: #hex]` de vuelta en el bloque DBML (queda persistente y portable).
+- Interactive palette: clicking a table header opens a menu to **pick** or **remove** color. The plugin writes `[headercolor: #hex]` back into the DBML block (persistent and portable).
 
 ## [0.1.5] - 2026-06-17
 
-### Agregado
+### Added
 
-- Color de encabezado por tabla con `[headercolor: #hex]` (compatible con dbdiagram). El color del texto del encabezado se ajusta solo (blanco u oscuro) según la luminancia.
+- Per-table header color with `[headercolor: #hex]` (dbdiagram-compatible). The header text color adjusts itself (white or dark) based on luminance.
 
 ## [0.1.4] - 2026-06-17
 
-### Cambiado
+### Changed
 
-- Eventos migrados a pointer events: el drag y el pan ahora funcionan también en móvil (táctil).
-- Los listeners globales se registran con `registerDomEvent` y se limpian al cerrar/re-renderizar la nota (sin fugas de memoria).
-- `touch-action: none` en el lienzo para que el arrastre táctil no haga scroll de la página.
+- Events migrated to pointer events: drag and pan now work on mobile (touch) too.
+- Global listeners are registered with `registerDomEvent` and cleaned up when the note is closed/re-rendered (no memory leaks).
+- `touch-action: none` on the canvas so touch dragging doesn't scroll the page.
 
 ## [0.1.3] - 2026-06-17
 
-### Cambiado
+### Changed
 
-- Notación de cardinalidad de un solo símbolo por extremo, igual a dbdiagram.io.
-- El lado "uno" se deriva de la nullabilidad de la FK: barra (`│`) si es `not null`, círculo (`○`) si es nullable.
-- El lado "muchos" dibuja solo la pata de gallo (el esquema no conoce el mínimo).
+- One-symbol-per-endpoint cardinality notation, just like dbdiagram.io.
+- The "one" side derives from the FK nullability: bar (`│`) if `not null`, circle (`○`) if nullable.
+- The "many" side draws only the crow's foot (the schema doesn't know the minimum).
 
 ## [0.1.2] - 2026-06-17
 
-### Agregado
+### Added
 
-- Lienzo redimensionable (manija) y directiva `// height: N` por diagrama.
-- Variable CSS `--dbml-erd-height` para altura global.
+- Resizable canvas (handle) and per-diagram `// height: N` directive.
+- `--dbml-erd-height` CSS variable for global height.
 
-### Cambiado
+### Changed
 
-- Notación de relaciones a círculo + barra (0..1) en el lado "uno".
+- Relationship notation changed to circle + bar (0..1) on the "one" side.
 
 ## [0.1.1] - 2026-06-17
 
-### Corregido
+### Fixed
 
-- Las relaciones de tablas ya movidas dejaban de seguir sus extremos al arrastrar otra tabla. Ahora toda arista que toque una tabla movida se re-rutea con manhattan.
+- Relationships of already-moved tables stopped following their endpoints when dragging another table. Now any edge touching a moved table is re-routed with manhattan.
 
 ## [0.1.0] - 2026-06-17
 
-### Agregado
+### Added
 
-- Render de bloques `dbml` / `DBML` a ERD en SVG.
-- Layout automático con elkjs (`elk.layered`, ruteo ortogonal).
-- Ruteo híbrido: ELK al cargar, manhattan al arrastrar.
-- Tablas arrastrables, pan, zoom, ajustar.
-- Iconos PK / FK, badge `NN`, tema integrado con variables de Obsidian.
+- Render of `dbml` / `DBML` blocks to an SVG ERD.
+- Automatic layout with elkjs (`elk.layered`, orthogonal routing).
+- Hybrid routing: ELK on load, manhattan on drag.
+- Draggable tables, pan, zoom, fit.
+- PK / FK icons, `NN` badge, theme integrated with Obsidian variables.

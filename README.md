@@ -1,158 +1,163 @@
 # DBML ER Diagrams
 
-Plugin de Obsidian que renderiza bloques de código ` ```dbml ` como **diagramas entidad-relación interactivos**, con **ruteo ortogonal estilo dbdiagram.io** (líneas en ángulo recto), notación crow's foot (pata de gallo / barra) y edición directa sobre el lienzo.
+Obsidian plugin that renders ` ```dbml ` code blocks as **interactive entity-relationship diagrams**, with **orthogonal, dbdiagram.io-style routing** (right-angle lines), crow's-foot notation (crow's foot / bar) and direct editing on the canvas.
 
-- **ID del plugin:** `dbml-erd`
-- **Nombre:** DBML ER Diagrams
-- **Autor:** Wilmar Rojas Avendaño · **Licencia:** MIT
-- **Versión mínima de Obsidian:** 1.6.0 · Funciona en escritorio y móvil.
-
----
-
-## Qué hace
-
-Escribís un bloque ` ```dbml ` con tus tablas y relaciones y el plugin lo dibuja como un ERD en SVG, con layout automático, marcadores de cardinalidad y edición interactiva. Todos los cambios que hacés desde el diagrama (renombrar, mover, color, cardinalidad, borrar…) se escriben de vuelta en el propio bloque dbml de la nota — el bloque es la única fuente de verdad.
-
-### Render y layout
-
-- Render de bloques `dbml` / `DBML` a ERD en SVG.
-- Layout automático con [elkjs](https://github.com/kieler/elkjs) (`elk.layered`) que minimiza cruces.
-- **Ruteo ortogonal (90°)** estilo dbdiagram.io, con esquinas redondeadas; las líneas se re-rutean en vivo al mover tablas.
-- Caché de layout por estructura: guardar la disposición no recalcula el layout ni produce parpadeo.
-- Tema integrado con las variables de Obsidian (claro/oscuro automático).
-
-### Notación
-
-- **Cardinalidad de un símbolo por extremo**: pata de gallo en el lado "muchos"; en el lado "uno", barra (`│`) si la FK es `not null`, o círculo (`○`) si es nullable.
-- Iconos **PK** (🔑) y **FK** (🔗), badge **`NN`** para columnas `not null`.
-- Color de encabezado por tabla (el texto se ajusta a blanco u oscuro según el fondo).
-
-### Navegación del lienzo
-
-- **Pan** (arrastrar el vacío), **zoom** (rueda del ratón), botones `+` / `−` / `⊡` (ajustar).
-- Lienzo **redimensionable** (ancho y alto).
-- La posición de las tablas, el zoom/desplazamiento y el tamaño del lienzo se **persisten dentro del bloque** y se restauran al reabrir la nota.
-
-### Edición interactiva (desde el diagrama)
-
-Todo se guarda de vuelta en el bloque dbml:
-
-- **Encabezado de tabla** (clic en la cabecera del nodo) → menú:
-  - Renombrar tabla… (actualiza también las referencias).
-  - Elegir color… / Quitar color.
-  - Eliminar tabla… (con diálogo de confirmación; borra la tabla y las relaciones que la referencian).
-- **Fila de columna** (clic en una columna) → menú:
-  - Renombrar columna… (actualiza las referencias `tabla.col`).
-  - Cambiar tipo…
-- **Conexión / relación** (clic en la línea):
-  - Primer clic: la **selecciona** y muestra los vértices de la ruta.
-  - Segundo clic: menú con el **tipo de relación (cardinalidad)** — Uno a muchos, Muchos a uno, Uno a uno, Muchos a muchos (marca la actual) —, "Restablecer ruta" (si fue editada a mano) y "Deseleccionar".
-- **Vértices de la ruta** (con la conexión seleccionada):
-  - Añadir: tocá/arrastrá el tirador `+` en medio de un tramo.
-  - Mover: arrastrá un vértice (la línea se re-ortogonaliza sola a 90°).
-  - Eliminar: **clic derecho** sobre un vértice → "Eliminar vértice"; si era el último, la ruta vuelve al modo automático.
+- **Plugin ID:** `dbml-erd`
+- **Name:** DBML ER Diagrams
+- **Author:** Wilmar Rojas Avendaño · **License:** MIT
+- **Minimum Obsidian version:** 1.6.0 · Works on desktop and mobile.
 
 ---
 
-## Uso
+## What it does
 
-Insertá un bloque de código con lenguaje `dbml`:
+You write a ` ```dbml ` block with your tables and relationships and the plugin draws it as an SVG ERD, with automatic layout, cardinality markers and interactive editing. Every change you make from the diagram (rename, move, color, cardinality, delete…) is written back into the note's own dbml block — the block is the single source of truth.
+
+### Render and layout
+
+- Renders `dbml` / `DBML` blocks to an SVG ERD.
+- Automatic layout with [elkjs](https://github.com/kieler/elkjs) (`elk.layered`) that minimizes crossings.
+- **Orthogonal (90°) routing** in dbdiagram.io style, with rounded corners; lines re-route live as you move tables.
+- Layout cache by structure: saving the layout does not recompute the layout nor cause flicker.
+- Theme integrated with Obsidian variables (automatic light/dark).
+
+### Notation
+
+- **One symbol per endpoint for cardinality**: crow's foot on the "many" side; on the "one" side, a bar (`│`) if the FK is `not null`, or a circle (`○`) if it is nullable.
+- **PK** (🔑) and **FK** (🔗) icons, **`NN`** badge for `not null` columns.
+- Per-table header color (text adjusts to white or dark depending on the background).
+
+### Canvas navigation
+
+- **Pan** (drag the empty space), **zoom** (mouse wheel), `+` / `−` / `⊡` (fit) buttons.
+- **Resizable** canvas (width and height).
+- Table positions, zoom/pan and canvas size are **persisted inside the block** and restored when you reopen the note.
+
+### Interactive editing (from the diagram)
+
+Everything is saved back to the dbml block:
+
+- **Table header** (click the node header) → menu:
+  - Rename table… (also updates references).
+  - Pick color… / Remove color.
+  - Delete table… (with confirmation dialog; removes the table and the relationships that reference it).
+- **Column row** (click a column) → menu:
+  - Rename column… (updates `table.col` references).
+  - Change type…
+- **Connection / relationship** (click the line):
+  - First click: **selects** it and shows the route vertices.
+  - Second click: menu with the **relationship type (cardinality)** — One to many, Many to one, One to one, Many to many (the current one is checked) —, "Reset route" (if hand-edited) and "Deselect".
+- **Route vertices** (with the connection selected):
+  - Add: tap/drag the `+` handle in the middle of a segment.
+  - Move: drag a vertex (the line re-orthogonalizes itself to 90°).
+  - Delete: **right-click** on a vertex → "Delete vertex"; if it was the last one, the route returns to automatic mode.
+
+### Language
+
+The interface (menus, dialogs and notices) is available in **English** (default) and **Spanish**. Switch it under **Settings → Community plugins → DBML ER Diagrams → Language**.
+
+---
+
+## Usage
+
+Insert a code block with the `dbml` language:
 
 ````markdown
 ```dbml
 // height: 600
 
-Table contrato {
-  id_contrato     int          [pk]
-  nombre_contrato varchar(120) [not null]
-  id_cliente      int          [not null]
-  estado          varchar(20)
+Table contract {
+  contract_id   int          [pk]
+  contract_name varchar(120) [not null]
+  client_id     int          [not null]
+  status        varchar(20)
 }
 
-Table cliente {
-  id_cliente int          [pk]
-  nombre     varchar(100) [not null]
+Table client {
+  client_id int          [pk]
+  name      varchar(100) [not null]
 }
 
-Ref: contrato.id_cliente > cliente.id_cliente
+Ref: contract.client_id > client.client_id
 ```
 ````
 
-### Sintaxis soportada
+### Supported syntax
 
-- `Table nombre { ... }` (y forma corta `nombre { ... }`).
-- Columnas: `nombre tipo [pk, not null, note: '...', ref: > otra.col]`.
-- Relaciones: línea `Ref: a.col > b.col`, inline `ref: > b.col`, o forma directa `a.col <> b.col`.
-- Operadores de cardinalidad: `>` (muchos→uno), `<` (uno→muchos), `<>` (muchos↔muchos), `-` (uno↔uno).
-- Color de encabezado por tabla: `Table nombre [headercolor: #2E7D32] { ... }`.
-- Note de tabla y de columna (`Note: '...'`, `note: '...'`).
-- Directiva opcional `// height: N` (alto del lienzo en px).
-- Comentarios `//`.
+- `Table name { ... }` (and the short form `name { ... }`).
+- Columns: `name type [pk, not null, note: '...', ref: > other.col]`.
+- Relationships: a `Ref: a.col > b.col` line, inline `ref: > b.col`, or the direct form `a.col <> b.col`.
+- Cardinality operators: `>` (many→one), `<` (one→many), `<>` (many↔many), `-` (one↔one).
+- Per-table header color: `Table name [headercolor: #2E7D32] { ... }`.
+- Table and column notes (`Note: '...'`, `note: '...'`).
+- Optional `// height: N` directive (canvas height in px).
+- `//` comments.
 
-> Subset deliberado de DBML, suficiente para esquemas controlados. No incluye aún enums, table groups ni claves compuestas.
+> A deliberate subset of DBML, enough for controlled schemas. It does not yet include enums, table groups or composite keys.
 
-### Anotaciones de disposición (gestionadas por el plugin)
+### Layout annotations (managed by the plugin)
 
-El plugin guarda el estado visual como comentarios dentro del bloque; no hace falta editarlos a mano:
+The plugin stores the visual state as comments inside the block; you don't need to edit them by hand:
 
-- `// @pos <tabla> <x> <y>` — posición de una tabla movida.
-- `// @view <x> <y> <zoom>` — desplazamiento y zoom.
-- `// @size <w> <h>` — tamaño del lienzo.
-- `// @edge <from> <fromCol> <to> <toCol> <x1> <y1> …` — vértices de una ruta editada a mano.
-
----
-
-## Generar el DBML automáticamente (skill `sql-to-dbml`)
-
-Para no escribir el DBML a mano existe una skill de Claude Code, **`sql-to-dbml`**, que convierte scripts SQL `CREATE TABLE` (ANSI genérico) — o tablas que vas definiendo en la conversación — en DBML compatible con este plugin (degrada a lo que el plugin dibuja, nunca emite sintaxis que no entienda).
-
-- Repositorio: <https://github.com/wrojasa/skill-sql-to-dbml>
-- Disparadores típicos: "convierte este CREATE TABLE a dbml", "genera el dbml de estas tablas", "arma el ERD en dbml", "agrega esta tabla al dbml", "actualiza el dbml con…".
-
-Pegás el bloque resultante en una nota dentro de ` ```dbml ` y el plugin lo renderiza.
+- `// @pos <table> <x> <y>` — position of a moved table.
+- `// @view <x> <y> <zoom>` — pan and zoom.
+- `// @size <w> <h>` — canvas size.
+- `// @edge <from> <fromCol> <to> <toCol> <x1> <y1> …` — vertices of a hand-edited route.
 
 ---
 
-## Instalación
+## Generate the DBML automatically (`sql-to-dbml` skill)
+
+So you don't have to write the DBML by hand there is a Claude Code skill, **`sql-to-dbml`**, that converts SQL `CREATE TABLE` scripts (generic ANSI) — or tables you define during the conversation — into DBML compatible with this plugin (it degrades to what the plugin draws, never emitting syntax it can't understand).
+
+- Repository: <https://github.com/wrojasa/skill-sql-to-dbml>
+- Typical triggers: "convert this CREATE TABLE to dbml", "generate the dbml for these tables", "build the ERD in dbml", "add this table to the dbml", "update the dbml with…".
+
+Paste the resulting block into a note inside ` ```dbml ` and the plugin renders it.
+
+---
+
+## Installation
 
 ### Manual
 
-1. Descargá `main.js`, `manifest.json` y `styles.css` del último release.
-2. Copiá los tres a `<vault>/.obsidian/plugins/dbml-erd/`.
-3. Activá el plugin en **Ajustes → Complementos de la comunidad**.
+1. Download `main.js`, `manifest.json` and `styles.css` from the latest release.
+2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/`.
+3. Enable the plugin under **Settings → Community plugins**.
 
 ---
 
-## Desarrollo
+## Development
 
 ```bash
 npm install
-npm run dev     # build con sourcemaps inline
-npm run build   # build de producción minificado
+npm run dev     # build with inline sourcemaps
+npm run build   # minified production build
 ```
 
-Estructura del código:
+Code structure:
 
-- `src/main.ts` — plugin, render del bloque y la clase `Diagram` (SVG, interacción, persistencia).
-- `src/parser.ts` — parser DBML (subset) y mutadores del bloque (renombrar, tipos, cardinalidad, borrar).
-- `src/layout.ts` — layout con elkjs y constantes de geometría.
-- `styles.css` — estilos integrados con las variables de tema de Obsidian.
+- `src/main.ts` — plugin, block rendering and the `Diagram` class (SVG, interaction, persistence).
+- `src/parser.ts` — DBML parser (subset) and block mutators (rename, types, cardinality, delete).
+- `src/layout.ts` — layout with elkjs and geometry constants.
+- `src/i18n.ts` — interface strings (English/Spanish) and the `t()` lookup.
+- `styles.css` — styles integrated with Obsidian's theme variables.
 
 ## Release
 
-Los releases se generan con GitHub Actions (`.github/workflows/release.yml`).
-Para publicar una versión nueva: subí el `version` en `manifest.json` y `package.json`,
-agregá la entrada en `versions.json` y `CHANGELOG.md`, creá un tag con ese número
-exacto (sin prefijo `v`) y empujalo:
+Releases are produced with GitHub Actions (`.github/workflows/release.yml`).
+To publish a new version: bump `version` in `manifest.json` and `package.json`,
+add the entry to `versions.json` and `CHANGELOG.md`, create a tag with that exact
+number (no `v` prefix) and push it:
 
 ```bash
-# usá el número exacto del manifest, sin prefijo v
+# use the exact number from the manifest, without the v prefix
 git tag 0.1.19
 git push origin 0.1.19
 ```
 
-El workflow compila y adjunta `main.js`, `manifest.json` y `styles.css` al release.
+The workflow compiles and attaches `main.js`, `manifest.json` and `styles.css` to the release.
 
-## Licencia
+## License
 
 MIT © 2026 Wilmar Rojas Avendaño

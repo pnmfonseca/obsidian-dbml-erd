@@ -7,7 +7,10 @@ import {
   App,
   Notice,
   TFile,
+  PluginSettingTab,
+  Setting,
 } from "obsidian";
+import { t, setLang, Lang, LANGS } from "./i18n";
 import {
   parseDBML,
   Model,
@@ -35,7 +38,13 @@ import {
 
 const NS = "http://www.w3.org/2000/svg";
 
+interface DbmlErdSettings {
+  lang: Lang;
+}
+const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en" };
+
 export default class DbmlErdPlugin extends Plugin {
+  settings: DbmlErdSettings = { ...DEFAULT_SETTINGS };
   // arista seleccionada por bloque (sourcePath#lineStart); sobrevive a los
   // re-render del code block para no perder los handles al guardar el layout.
   selByBlock = new Map<string, string | undefined>();
@@ -45,6 +54,8 @@ export default class DbmlErdPlugin extends Plugin {
   private layoutCache = new Map<string, LayoutResult>();
 
   async onload() {
+    await this.loadSettings();
+    this.addSettingTab(new DbmlErdSettingTab(this.app, this));
     const handler = (
       source: string,
       el: HTMLElement,
@@ -52,6 +63,20 @@ export default class DbmlErdPlugin extends Plugin {
     ) => this.renderBlock(source, el, ctx);
     this.registerMarkdownCodeBlockProcessor("dbml", handler);
     this.registerMarkdownCodeBlockProcessor("DBML", handler);
+  }
+
+  async loadSettings() {
+    this.settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      await this.loadData()
+    );
+    setLang(this.settings.lang);
+  }
+
+  async saveSettings() {
+    setLang(this.settings.lang);
+    await this.saveData(this.settings);
   }
 
   async renderBlock(
@@ -65,13 +90,15 @@ export default class DbmlErdPlugin extends Plugin {
     } catch (e) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(
-        "Error de parseo: " + (e instanceof Error ? e.message : String(e))
+        t("parseError", {
+          msg: e instanceof Error ? e.message : String(e),
+        })
       );
       return;
     }
     if (model.tables.length === 0) {
       el.empty();
-      el.createDiv({ cls: "dbml-erd-wrap" }).setText("DBML sin tablas.");
+      el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("noTables"));
       return;
     }
     try {
@@ -85,7 +112,7 @@ export default class DbmlErdPlugin extends Plugin {
       if (!layout) {
         // primer cálculo: muestra placeholder mientras ELK trabaja (async)
         el.empty();
-        el.createDiv({ cls: "dbml-erd-wrap" }).setText("Renderizando ERD…");
+        el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("rendering"));
         layout = await computeLayout(model);
         this.layoutCache.set(layoutKey, layout);
       }
@@ -121,7 +148,9 @@ export default class DbmlErdPlugin extends Plugin {
     } catch (e) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(
-        "Error de layout: " + (e instanceof Error ? e.message : String(e))
+        t("layoutError", {
+          msg: e instanceof Error ? e.message : String(e),
+        })
       );
     }
   }
@@ -694,17 +723,17 @@ class Diagram extends MarkdownRenderChild {
     if (this.customEdges[key]) {
       menu.addItem((i) =>
         i
-          .setTitle("Restablecer ruta")
+          .setTitle(t("resetRoute"))
           .setIcon("rotate-ccw")
           .onClick(() => this.resetEdge(key))
       );
     }
     // tipo de relación (cardinalidad): cambia pata de gallo (muchos) / barra (uno)
     const ops: [string, string][] = [
-      ["<", "Uno a muchos (1 → ∞)"],
-      [">", "Muchos a uno (∞ → 1)"],
-      ["-", "Uno a uno (1 → 1)"],
-      ["<>", "Muchos a muchos (∞ ↔ ∞)"],
+      ["<", t("relOneToMany")],
+      [">", t("relManyToOne")],
+      ["-", t("relOneToOne")],
+      ["<>", t("relManyToMany")],
     ];
     for (const [op, label] of ops) {
       menu.addItem((i) =>
@@ -717,7 +746,7 @@ class Diagram extends MarkdownRenderChild {
     menu.addSeparator();
     menu.addItem((i) =>
       i
-        .setTitle("Deseleccionar")
+        .setTitle(t("deselect"))
         .setIcon("x")
         .onClick(() => {
           this.selectedEdge = undefined;
@@ -731,7 +760,7 @@ class Diagram extends MarkdownRenderChild {
     if (r.op === op) return;
     this.editBlock(
       (l, s, e) => setRefOpInBlock(l, s, e, r, op),
-      "No se pudo cambiar el tipo de relación."
+      t("changeRelTypeFail")
     );
   }
 
@@ -809,7 +838,7 @@ class Diagram extends MarkdownRenderChild {
     const menu = new Menu();
     menu.addItem((it) =>
       it
-        .setTitle("Eliminar vértice")
+        .setTitle(t("deleteVertex"))
         .setIcon("trash-2")
         .onClick(() => this.deleteWaypoint(r, i, key, idx))
     );
@@ -1153,36 +1182,36 @@ class Diagram extends MarkdownRenderChild {
     const menu = new Menu();
     menu.addItem((i) =>
       i
-        .setTitle("Renombrar tabla…")
+        .setTitle(t("renameTable"))
         .setIcon("pencil")
         .onClick(() =>
-          this.promptText("Nuevo nombre de la tabla", name, (v) =>
+          this.promptText(t("renameTablePrompt"), name, (v) =>
             this.renameTable(name, v)
           )
         )
     );
     menu.addItem((i) =>
       i
-        .setTitle("Elegir color…")
+        .setTitle(t("pickColor"))
         .setIcon("palette")
         .onClick(() => this.pickColor(name))
     );
     menu.addItem((i) =>
       i
-        .setTitle("Quitar color")
+        .setTitle(t("removeColor"))
         .setIcon("rotate-ccw")
         .onClick(() => this.setHeaderColor(name, null))
     );
     menu.addSeparator();
     menu.addItem((i) =>
       i
-        .setTitle("Eliminar tabla…")
+        .setTitle(t("deleteTableMenu"))
         .setIcon("trash-2")
         .onClick(() =>
           this.confirm(
-            "Eliminar tabla",
-            `¿Eliminar la tabla "${name}" del diagrama? Se borrará su definición y las relaciones que la referencian.`,
-            "Eliminar",
+            t("deleteTableTitle"),
+            t("deleteTableBody", { name }),
+            t("deleteBtn"),
             () => this.deleteTable(name)
           )
         )
@@ -1192,26 +1221,26 @@ class Diagram extends MarkdownRenderChild {
 
   private openColumnMenu(table: string, colIdx: number, evt: PointerEvent) {
     if (!this.plugin || !this.ctx || !this.blockEl) return;
-    const t = this.model.tables.find((t) => t.name === table);
-    const col = t?.cols[colIdx];
+    const tbl = this.model.tables.find((x) => x.name === table);
+    const col = tbl?.cols[colIdx];
     if (!col) return;
     const menu = new Menu();
     menu.addItem((i) =>
       i
-        .setTitle("Renombrar columna…")
+        .setTitle(t("renameColumn"))
         .setIcon("pencil")
         .onClick(() =>
-          this.promptText("Nuevo nombre de la columna", col.name, (v) =>
+          this.promptText(t("renameColumnPrompt"), col.name, (v) =>
             this.renameColumn(table, col.name, v)
           )
         )
     );
     menu.addItem((i) =>
       i
-        .setTitle("Cambiar tipo…")
+        .setTitle(t("changeType"))
         .setIcon("type")
         .onClick(() =>
-          this.promptText("Nuevo tipo de dato", col.type, (v) =>
+          this.promptText(t("changeTypePrompt"), col.type, (v) =>
             this.setColType(table, col.name, v)
           )
         )
@@ -1260,7 +1289,7 @@ class Diagram extends MarkdownRenderChild {
     if (!this.plugin || !this.ctx || !this.blockEl) return;
     const info = this.ctx.getSectionInfo(this.blockEl);
     if (!info) {
-      new Notice("DBML ERD: no se pudo ubicar el bloque para editar.");
+      new Notice(t("locateBlockFail"));
       return;
     }
     const file = this.plugin.app.vault.getAbstractFileByPath(
@@ -1290,14 +1319,14 @@ class Diagram extends MarkdownRenderChild {
     if (newName === oldName) return;
     this.editBlock(
       (l, s, e) => renameTableInBlock(l, s, e, oldName, newName),
-      `No se pudo renombrar "${oldName}" (¿nombre válido? solo letras, números y _).`
+      t("renameTableFail", { name: oldName })
     );
   }
 
   private deleteTable(name: string) {
     this.editBlock(
       (l, s, e) => deleteTableInBlock(l, s, e, name),
-      `No se pudo eliminar la tabla "${name}".`
+      t("deleteTableFail", { name })
     );
   }
 
@@ -1305,14 +1334,14 @@ class Diagram extends MarkdownRenderChild {
     if (newCol === oldCol) return;
     this.editBlock(
       (l, s, e) => renameColumnInBlock(l, s, e, table, oldCol, newCol),
-      "No se pudo renombrar la columna."
+      t("renameColumnFail")
     );
   }
 
   private setColType(table: string, col: string, newType: string) {
     this.editBlock(
       (l, s, e) => setColumnTypeInBlock(l, s, e, table, col, newType),
-      "No se pudo cambiar el tipo (use letras, números, _ y paréntesis)."
+      t("changeTypeFail")
     );
   }
 
@@ -1424,7 +1453,7 @@ class Diagram extends MarkdownRenderChild {
     if (!this.plugin || !this.ctx || !this.blockEl) return;
     const info = this.ctx.getSectionInfo(this.blockEl);
     if (!info) {
-      new Notice("DBML ERD: no se pudo ubicar el bloque para editar.");
+      new Notice(t("locateBlockFail"));
       return;
     }
     const file = this.plugin.app.vault.getAbstractFileByPath(
@@ -1446,7 +1475,7 @@ class Diagram extends MarkdownRenderChild {
       }
       return done ? lines.join("\n") : data;
     });
-    if (!done) new Notice(`DBML ERD: no se encontró la tabla "${name}".`);
+    if (!done) new Notice(t("tableNotFound", { name }));
   }
 
   // lee px inline explícitos; ignora "", "100%", "auto", etc.
@@ -1596,7 +1625,7 @@ class ConfirmModal extends Modal {
       this.close();
       this.onConfirm();
     };
-    const cancel = bar.createEl("button", { text: "Cancelar" });
+    const cancel = bar.createEl("button", { text: t("cancel") });
     cancel.onclick = () => this.close();
     cancel.focus();
   }
@@ -1642,13 +1671,38 @@ class EditModal extends Modal {
       }
     });
     const bar = contentEl.createDiv({ cls: "dbml-edit-actions" });
-    const ok = bar.createEl("button", { text: "Guardar" });
+    const ok = bar.createEl("button", { text: t("save") });
     ok.classList.add("mod-cta");
     ok.onclick = submit;
-    const cancel = bar.createEl("button", { text: "Cancelar" });
+    const cancel = bar.createEl("button", { text: t("cancel") });
     cancel.onclick = () => this.close();
   }
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+// Settings tab: language selector (English default). Changing it updates the
+// active language for menus/dialogs/notices opened afterwards.
+class DbmlErdSettingTab extends PluginSettingTab {
+  private plugin: DbmlErdPlugin;
+  constructor(app: App, plugin: DbmlErdPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new Setting(containerEl)
+      .setName(t("settingsLanguage"))
+      .setDesc(t("settingsLanguageDesc"))
+      .addDropdown((dd) => {
+        for (const { value, label } of LANGS) dd.addOption(value, label);
+        dd.setValue(this.plugin.settings.lang).onChange(async (v) => {
+          this.plugin.settings.lang = v as Lang;
+          await this.plugin.saveSettings();
+          this.display(); // re-render the tab in the new language
+        });
+      });
   }
 }

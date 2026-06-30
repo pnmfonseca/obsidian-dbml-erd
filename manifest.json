@@ -3,7 +3,7 @@
   "name": "DBML ER Diagrams",
   "version": "0.1.19",
   "minAppVersion": "1.6.0",
-  "description": "Renderiza bloques de código dbml como diagramas entidad-relación con ruteo ortogonal estilo dbdiagram.io.",
+  "description": "Render dbml code blocks as entity-relationship diagrams with orthogonal, dbdiagram.io-style routing.",
   "author": "Wilmar Rojas Avendaño",
   "isDesktopOnly": false
 }

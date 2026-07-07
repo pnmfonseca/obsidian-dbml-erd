@@ -2,6 +2,13 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.21] - 2026-07-07
+
+### Changed
+
+- **Much faster plugin startup**: the ELK layout engine (~1.6 MB, ~90% of the bundle) is no longer evaluated when Obsidian loads the plugin. It is now lazy-loaded via dynamic `import()` on the first diagram render (a shared promise deduplicates concurrent first renders, so several dbml blocks trigger a single engine init). The first diagram of a session takes the one-time init cost (~100-300 ms, covered by the existing "Rendering ERD…" placeholder); plugin load time drops to near-instant.
+- **Non-blocking `onload`**: settings (interface language) are loaded without awaiting inside `onload`; the code block processors are registered immediately. `renderBlock` still waits for settings so even the placeholder and error messages appear in the configured language. If `data.json` is corrupted, the plugin falls back to the default language instead of breaking renders.
+
 ## [0.1.20] - 2026-06-30
 
 ### Added

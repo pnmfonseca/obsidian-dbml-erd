@@ -1,7 +1,7 @@
 // Layout con elkjs: posiciona tablas (layered) y rutea aristas ortogonalmente
 // conectándolas a puertos ubicados en la fila de cada columna.
-import ELK from "elkjs/lib/elk.bundled.js";
 import type {
+  ELK as ElkInstance,
   ElkNode,
   ElkPort,
   ElkExtendedEdge,
@@ -30,7 +30,18 @@ export interface LayoutResult {
   edges: EdgePath[]; // mismo orden que model.refs
 }
 
-const elk = new ELK();
+// ELK (~1.6 MB) se carga perezosamente en el primer layout: el import()
+// dinámico difiere la evaluación del motor al primer render en vez del
+// arranque de Obsidian. La promesa compartida dedupe renders concurrentes.
+let elkPromise: Promise<ElkInstance> | undefined;
+function getElk(): Promise<ElkInstance> {
+  if (!elkPromise) {
+    elkPromise = import("elkjs/lib/elk.bundled.js").then(
+      (m) => new m.default()
+    );
+  }
+  return elkPromise;
+}
 
 export function tableHeight(colCount: number): number {
   return HEAD_H + colCount * ROW_H;
@@ -89,7 +100,7 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
     edges,
   };
 
-  const res = await elk.layout(graph);
+  const res = await (await getElk()).layout(graph);
   const nodes: Record<string, NodePos> = {};
   for (const n of res.children ?? []) {
     nodes[n.id] = {

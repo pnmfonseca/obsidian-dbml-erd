@@ -52,10 +52,12 @@ export default class DbmlErdPlugin extends Plugin {
   // así los re-render que dispara guardar el layout no recalculan ELK ni
   // muestran el placeholder async (esa pausa era el "parpadeo" visible).
   private layoutCache = new Map<string, LayoutResult>();
+  // loadSettings corre sin await en onload (solo fija idioma de i18n);
+  // renderBlock la espera para que hasta el placeholder salga en el idioma
+  // correcto sin bloquear el arranque de Obsidian.
+  private settingsReady?: Promise<void>;
 
   async onload() {
-    await this.loadSettings();
-    this.addSettingTab(new DbmlErdSettingTab(this.app, this));
     const handler = (
       source: string,
       el: HTMLElement,
@@ -63,6 +65,9 @@ export default class DbmlErdPlugin extends Plugin {
     ) => this.renderBlock(source, el, ctx);
     this.registerMarkdownCodeBlockProcessor("dbml", handler);
     this.registerMarkdownCodeBlockProcessor("DBML", handler);
+    this.addSettingTab(new DbmlErdSettingTab(this.app, this));
+    // si data.json está corrupto, cae al idioma por defecto sin romper renders
+    this.settingsReady = this.loadSettings().catch(() => {});
   }
 
   async loadSettings() {
@@ -84,6 +89,7 @@ export default class DbmlErdPlugin extends Plugin {
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext
   ) {
+    if (this.settingsReady) await this.settingsReady;
     let model: Model;
     try {
       model = parseDBML(source);

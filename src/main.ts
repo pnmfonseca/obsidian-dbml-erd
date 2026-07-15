@@ -7,6 +7,7 @@ import {
   App,
   Notice,
   TFile,
+  TAbstractFile,
   PluginSettingTab,
   Setting,
 } from "obsidian";
@@ -40,8 +41,12 @@ const NS = "http://www.w3.org/2000/svg";
 
 interface DbmlErdSettings {
   lang: Lang;
+  // estilo do "pé de galo" (many): "inverted" abre na entidade e converge sobre
+  // a linha (leitura clara); "original" converge na entidade e abre sobre a
+  // linha (parece uma seta em ligações horizontais). Default: inverted.
+  crowFoot: "original" | "inverted";
 }
-const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en" };
+const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "inverted" };
 
 export default class DbmlErdPlugin extends Plugin {
   settings: DbmlErdSettings = { ...DEFAULT_SETTINGS };
@@ -56,6 +61,25 @@ export default class DbmlErdPlugin extends Plugin {
   // renderBlock la espera para que hasta el placeholder salga en el idioma
   // correcto sin bloquear el arranque de Obsidian.
   private settingsReady?: Promise<void>;
+  // registo de blocos renderizados vivos, indexado pelo próprio `el` do bloco
+  // (referência estável durante a vida do render). Guarda os ficheiros que o
+  // bloco inclui via @include, para poder re-renderizá-lo quando um deles muda.
+  // Obsidian só re-renderiza um bloco quando a *nota* muda; a edição de um
+  // ficheiro incluído passa-lhe ao lado, e é isso que este mapa resolve.
+  private liveBlocks = new Map<
+    HTMLElement,
+    {
+      source: string;
+      el: HTMLElement;
+      ctx: MarkdownPostProcessorContext;
+      includes: Set<string>;
+      child?: Diagram;
+    }
+  >();
+  // coalesce de reloads: os saves disparam ráfagas de "modify" (autosave);
+  // agrupa-as numa só passagem de re-render por janela curta.
+  private reloadTimer = 0;
+  private dirtyPaths = new Set<string>();
 
   async onload() {
     const handler = (
@@ -66,8 +90,79 @@ export default class DbmlErdPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("dbml", handler);
     this.registerMarkdownCodeBlockProcessor("DBML", handler);
     this.addSettingTab(new DbmlErdSettingTab(this.app, this));
+    // auto-reload: quando um ficheiro incluído por algum bloco vivo muda,
+    // re-renderiza esse bloco. registerEvent limpa o listener ao descarregar.
+    this.registerEvent(
+      this.app.vault.on("modify", (f) => this.onVaultModify(f))
+    );
     // si data.json está corrupto, cae al idioma por defecto sin romper renders
     this.settingsReady = this.loadSettings().catch(() => {});
+  }
+
+  // um ficheiro mudou: se algum bloco vivo o inclui, agenda re-render.
+  private onVaultModify(file: TAbstractFile) {
+    if (!(file instanceof TFile)) return;
+    let relevant = false;
+    for (const entry of this.liveBlocks.values()) {
+      if (entry.includes.has(file.path)) {
+        relevant = true;
+        break;
+      }
+    }
+    if (!relevant) return;
+    this.dirtyPaths.add(file.path);
+    if (this.reloadTimer) activeWindow.clearTimeout(this.reloadTimer);
+    this.reloadTimer = activeWindow.setTimeout(() => this.flushReloads(), 150);
+  }
+
+  // re-renderiza os blocos afetados pelos ficheiros marcados como sujos.
+  // Snapshot antes de iterar: renderBlock muta liveBlocks (unload+set) e não se
+  // deve iterar o Map enquanto ele se altera. Entradas com el destacado do DOM
+  // (bloco fora de vista, descarregado sem unload) são purgadas de passagem.
+  private flushReloads() {
+    this.reloadTimer = 0;
+    const dirty = this.dirtyPaths;
+    this.dirtyPaths = new Set();
+    const targets: {
+      source: string;
+      el: HTMLElement;
+      ctx: MarkdownPostProcessorContext;
+    }[] = [];
+    for (const entry of [...this.liveBlocks.values()]) {
+      if (!entry.el.isConnected) {
+        this.liveBlocks.delete(entry.el);
+        continue;
+      }
+      let hit = false;
+      for (const p of dirty)
+        if (entry.includes.has(p)) {
+          hit = true;
+          break;
+        }
+      if (hit)
+        targets.push({ source: entry.source, el: entry.el, ctx: entry.ctx });
+    }
+    for (const tgt of targets) this.renderBlock(tgt.source, tgt.el, tgt.ctx);
+  }
+
+  // um Diagram descarregou: esquece o seu bloco, mas só se a entrada ainda for
+  // a dele (num re-render manual, o Diagram novo já pode ter registado o el).
+  forgetBlock(el: HTMLElement | undefined, child: Diagram) {
+    if (!el) return;
+    const entry = this.liveBlocks.get(el);
+    if (entry && entry.child === child) this.liveBlocks.delete(el);
+  }
+
+  // re-renderiza todos os blocos vivos. Usado ao mudar uma opção puramente
+  // visual (ex.: estilo do crow's foot): a estrutura não muda, logo o layout
+  // vem da cache e a troca é imediata e sem colapso (isReload). Snapshot antes
+  // de iterar, porque renderBlock muta liveBlocks.
+  rerenderLiveBlocks() {
+    for (const entry of [...this.liveBlocks.values()]) {
+      if (entry.el.isConnected)
+        this.renderBlock(entry.source, entry.el, entry.ctx);
+      else this.liveBlocks.delete(entry.el);
+    }
   }
 
   async loadSettings() {
@@ -90,9 +185,46 @@ export default class DbmlErdPlugin extends Plugin {
     ctx: MarkdownPostProcessorContext
   ) {
     if (this.settingsReady) await this.settingsReady;
+    // Re-render manual (auto-reload) reutiliza o mesmo `el`: descarrega o
+    // Diagram anterior para não deixar vivos os seus listeners de window
+    // (pan/zoom em pointermove/pointerup), que el.empty() não remove.
+    const prevChild = this.liveBlocks.get(el)?.child;
+    if (prevChild) prevChild.unload();
+    // Reload: já existe conteúdo montado neste bloco. Nesse caso não se mostra
+    // o placeholder "rendering" (que colapsaria a altura do bloco e faria a
+    // nota saltar por scroll anchoring); mantém-se o diagrama anterior visível
+    // até o novo estar pronto, trocando-se num único passo síncrono.
+    const isReload = !!prevChild || !!el.querySelector(".dbml-erd-canvas");
+    // Expande @include (substituição textual, estilo #include de C) antes do
+    // parse: relaciones entre tablas de ficheros distintos se componen solas,
+    // y las anotaciones de layout (@pos/@view/@size/@edge) del bloque siguen
+    // leyéndose de `source` (no de `expanded`) para hacer round-trip al bloque.
+    // `includes` acumula os ficheiros resolvidos, para o auto-reload saber de
+    // que ficheiros este bloco depende.
+    const includes = new Set<string>();
+    let expanded: string;
+    try {
+      expanded = await this.expandIncludes(
+        source,
+        ctx.sourcePath,
+        [ctx.sourcePath],
+        includes
+      );
+    } catch (e) {
+      this.liveBlocks.delete(el);
+      el.empty();
+      el.createDiv({ cls: "dbml-erd-wrap" }).setText(
+        t("includeError", { msg: e instanceof Error ? e.message : String(e) })
+      );
+      return;
+    }
+    // regista o bloco já com as suas dependências: mesmo que o parse falhe ou
+    // não haja tabelas, uma edição posterior do include re-renderiza (o erro
+    // pode estar precisamente no conteúdo incluído).
+    this.liveBlocks.set(el, { source, el, ctx, includes });
     let model: Model;
     try {
-      model = parseDBML(source);
+      model = parseDBML(expanded);
     } catch (e) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(
@@ -111,21 +243,29 @@ export default class DbmlErdPlugin extends Plugin {
       // El layout ELK depende solo de la estructura DBML, no de las anotaciones
       // de disposición; al ignorarlas en la clave, un re-render por guardado
       // reusa el layout cacheado y se renderiza sin pausa async (sin parpadeo).
-      const layoutKey = source
+      // Se usa `expanded`: la estructura vive ahora en el texto expandido, así
+      // que editar un .dbml incluido cambia la clave y recalcula el layout.
+      const layoutKey = expanded
         .replace(/^[ \t]*\/\/[ \t]*@(pos|view|size|edge)\b.*$/gm, "")
         .trim();
       let layout = this.layoutCache.get(layoutKey);
       if (!layout) {
-        // primer cálculo: muestra placeholder mientras ELK trabaja (async)
-        el.empty();
-        el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("rendering"));
+        // Placeholder só no primeiro render (cold). Em reload, o diagrama
+        // anterior fica visível durante o computeLayout — sem colapso de altura,
+        // sem salto de scroll. A troca faz-se no el.empty() síncrono abaixo.
+        if (!isReload) {
+          el.empty();
+          el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("rendering"));
+        }
         layout = await computeLayout(model);
         this.layoutCache.set(layoutKey, layout);
       }
       el.empty();
       const wrap = el.createDiv({ cls: "dbml-erd-wrap" });
-      const hMatch = source.match(/\/\/\s*(?:canvas-)?height:\s*(\d+)/i);
+      const hMatch = expanded.match(/\/\/\s*(?:canvas-)?height:\s*(\d+)/i);
       const height = hMatch ? parseInt(hMatch[1], 10) : undefined;
+      // Layout persistido (posición/vista/tamaño/aristas) se lee de `source`:
+      // es estado del bloque y debe hacer round-trip a ese bloque, no al include.
       const savedPos = parsePositions(source);
       const view = parseView(source);
       const size = parseSize(source);
@@ -139,18 +279,21 @@ export default class DbmlErdPlugin extends Plugin {
         nodes: freshNodes,
         edges: layout.edges,
       };
-      ctx.addChild(
-        new Diagram(wrap, model, layoutForInstance, {
-          height,
-          plugin: this,
-          ctx,
-          el,
-          savedPos,
-          view: view ?? undefined,
-          size: size ?? undefined,
-          savedEdges,
-        })
-      );
+      const child = new Diagram(wrap, model, layoutForInstance, {
+        height,
+        plugin: this,
+        ctx,
+        el,
+        savedPos,
+        view: view ?? undefined,
+        size: size ?? undefined,
+        savedEdges,
+      });
+      // liga o Diagram à entrada do bloco: o próximo auto-reload usa-o para
+      // descarregar este render, e o onunload dele desregista o bloco.
+      const entry = this.liveBlocks.get(el);
+      if (entry) entry.child = child;
+      ctx.addChild(child);
     } catch (e) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(
@@ -159,6 +302,65 @@ export default class DbmlErdPlugin extends Plugin {
         })
       );
     }
+  }
+
+  // resolve el destino de un @include: primero como enlace estilo Obsidian
+  // (relativo a la nota y consciente de la carpeta de adjuntos) y, en fallback,
+  // como ruta absoluta de vault y relativa a la carpeta del fichero que incluye.
+  private resolveInclude(linkpath: string, sourcePath: string): TFile | null {
+    const viaLink = this.app.metadataCache.getFirstLinkpathDest(
+      linkpath,
+      sourcePath
+    );
+    if (viaLink instanceof TFile) return viaLink;
+    const abs = this.app.vault.getAbstractFileByPath(linkpath);
+    if (abs instanceof TFile) return abs;
+    const slash = sourcePath.lastIndexOf("/");
+    const dir = slash >= 0 ? sourcePath.slice(0, slash) : "";
+    const rel = this.app.vault.getAbstractFileByPath(
+      dir ? `${dir}/${linkpath}` : linkpath
+    );
+    return rel instanceof TFile ? rel : null;
+  }
+
+  // expande directivas @include (también acepta "// @include") por sustitución
+  // textual, antes del parse. Recursivo: un fichero incluido puede incluir
+  // otros, resueltos relativos a *él*. El stack son las rutas en expansión en
+  // la rama actual: bloquea ciclos (A->A) pero permite diamantes (A y B->C).
+  private async expandIncludes(
+    source: string,
+    sourcePath: string,
+    stack: string[],
+    collected: Set<string>,
+    depth = 0
+  ): Promise<string> {
+    if (depth > 20) throw new Error("include depth limit exceeded");
+    const re = /^[ \t]*(?:\/\/[ \t]*)?@include[ \t]+(.+?)[ \t]*$/;
+    const out: string[] = [];
+    for (const line of source.split("\n")) {
+      const m = re.exec(line);
+      if (!m) {
+        out.push(line);
+        continue;
+      }
+      const linkpath = m[1].trim();
+      const file = this.resolveInclude(linkpath, sourcePath);
+      if (!file) throw new Error(`include not found: ${linkpath}`);
+      if (stack.includes(file.path))
+        throw new Error(`include cycle: ${file.path}`);
+      collected.add(file.path); // dependência do bloco → dispara auto-reload
+      const content = await this.app.vault.cachedRead(file);
+      out.push(
+        await this.expandIncludes(
+          content,
+          file.path,
+          [...stack, file.path],
+          collected,
+          depth + 1
+        )
+      );
+    }
+    return out.join("\n");
   }
 }
 
@@ -293,6 +495,9 @@ class Diagram extends MarkdownRenderChild {
     if (this.saveTimer) activeWindow.clearTimeout(this.saveTimer);
     this.colorInput?.remove();
     this.colorInput = undefined;
+    // desregista este bloco do registo de auto-reload (só se a entrada ainda
+    // apontar para este Diagram; num re-render manual o novo já a substituiu).
+    this.plugin?.forgetBlock(this.blockEl, this);
   }
 
   private btn(bar: HTMLElement, label: string, cb: () => void) {
@@ -462,19 +667,21 @@ class Diagram extends MarkdownRenderChild {
     const g = activeDocument.createElementNS(NS, "g");
     const dir = side === "E" ? 1 : -1;
     if (kind === "many") {
-      // pata de gallo (crow's foot): el esquema no conoce el mínimo, sin marca extra
- 
-      // ORIGINAL
-      // g.appendChild(this.line(x + dir * 11, y - 6, x, y));
-      // g.appendChild(this.line(x + dir * 11, y, x, y));
-      // g.appendChild(this.line(x + dir * 11, y + 6, x, y));
-
-      // MODIFICADO
-        // convergindo num ponto sobre a linha de ligação
+      // pata de gallo (crow's foot). Dois estilos, configuráveis nas settings:
+      const mode = this.plugin?.settings.crowFoot ?? "inverted";
+      if (mode === "original") {
+        // converge na entidade (x, y), abre sobre a linha (x + dir*11). Em
+        // ligações horizontais o dedo do meio some no conector e parece seta.
+        g.appendChild(this.line(x + dir * 11, y - 6, x, y));
+        g.appendChild(this.line(x + dir * 11, y, x, y));
+        g.appendChild(this.line(x + dir * 11, y + 6, x, y));
+      } else {
+        // inverted: abre na entidade (x, y±6) e converge sobre a linha. Os dois
+        // dedos abertos na entidade dão o "pé de galo" inequívoco.
         g.appendChild(this.line(x + dir * 11, y, x, y - 6));
         g.appendChild(this.line(x + dir * 11, y, x, y + 6));
-        g.appendChild(this.line(x + dir * 11, y, x, y)); // dedo do meio (opcional)
-  
+        g.appendChild(this.line(x + dir * 11, y, x, y)); // dedo do medio
+      }
     } else if (optional) {
       // "cero o uno": círculo (FK nullable)
       g.appendChild(this.circle(x + dir * 9, y, 4));
@@ -775,7 +982,9 @@ class Diagram extends MarkdownRenderChild {
     if (r.op === op) return;
     this.editBlock(
       (l, s, e) => setRefOpInBlock(l, s, e, r, op),
-      t("changeRelTypeFail")
+      t("externalRelWarn", {
+        rel: `${r.from}.${r.fromCol} → ${r.to}.${r.toCol}`,
+      })
     );
   }
 
@@ -1297,9 +1506,13 @@ class Diagram extends MarkdownRenderChild {
   }
 
   // ---- edición de textos (rename / tipo) ----
+  // `externalWarn` mostra-se quando a mutação não encontra o alvo no texto do
+  // bloco. Como os menus se constroem a partir do modelo (que inclui as tabelas
+  // vindas de @include), esse "não encontrado" significa, na prática, que o
+  // alvo está definido num ficheiro externo e não é editável a partir daqui.
   private async editBlock(
     mutate: (lines: string[], start: number, end: number) => boolean,
-    notFoundMsg: string
+    externalWarn: string
   ) {
     if (!this.plugin || !this.ctx || !this.blockEl) return;
     const info = this.ctx.getSectionInfo(this.blockEl);
@@ -1311,37 +1524,47 @@ class Diagram extends MarkdownRenderChild {
       this.ctx.sourcePath
     );
     if (!(file instanceof TFile)) return;
-    let ok = true;
+    let reason: "ok" | "norange" | "external" = "ok";
     // vault.process: lectura-modificación-escritura atómica (no pisa ediciones
     // concurrentes entre read y modify).
     await this.plugin.app.vault.process(file, (data) => {
       const lines = data.split("\n");
       const range = this.blockRange(lines, info.lineStart);
       if (!range) {
-        ok = false;
+        reason = "norange";
         return data;
       }
       if (!mutate(lines, range[0], range[1])) {
-        ok = false;
+        reason = "external";
         return data;
       }
       return lines.join("\n");
     });
-    if (!ok) new Notice(notFoundMsg);
+    // reason é atribuído dentro do closure de process(); a análise de fluxo do
+    // TS não o vê e estreitaria para "ok". Copiar para string evita o falso erro.
+    const outcome: string = reason;
+    if (outcome === "norange") new Notice(t("locateBlockFail"));
+    else if (outcome === "external") new Notice(externalWarn);
+  }
+
+  // aviso partilhado: o elemento pertence a um ficheiro incluído (@include) e
+  // não pode ser editado estruturalmente a partir deste bloco.
+  private externalEditWarn(name: string): string {
+    return t("externalEditWarn", { name });
   }
 
   private renameTable(oldName: string, newName: string) {
     if (newName === oldName) return;
     this.editBlock(
       (l, s, e) => renameTableInBlock(l, s, e, oldName, newName),
-      t("renameTableFail", { name: oldName })
+      this.externalEditWarn(oldName)
     );
   }
 
   private deleteTable(name: string) {
     this.editBlock(
       (l, s, e) => deleteTableInBlock(l, s, e, name),
-      t("deleteTableFail", { name })
+      this.externalEditWarn(name)
     );
   }
 
@@ -1349,14 +1572,14 @@ class Diagram extends MarkdownRenderChild {
     if (newCol === oldCol) return;
     this.editBlock(
       (l, s, e) => renameColumnInBlock(l, s, e, table, oldCol, newCol),
-      t("renameColumnFail")
+      this.externalEditWarn(table)
     );
   }
 
   private setColType(table: string, col: string, newType: string) {
     this.editBlock(
       (l, s, e) => setColumnTypeInBlock(l, s, e, table, col, newType),
-      t("changeTypeFail")
+      this.externalEditWarn(table)
     );
   }
 
@@ -1490,7 +1713,7 @@ class Diagram extends MarkdownRenderChild {
       }
       return done ? lines.join("\n") : data;
     });
-    if (!done) new Notice(t("tableNotFound", { name }));
+    if (!done) new Notice(this.externalEditWarn(name));
   }
 
   // lee px inline explícitos; ignora "", "100%", "auto", etc.
@@ -1717,6 +1940,19 @@ class DbmlErdSettingTab extends PluginSettingTab {
           this.plugin.settings.lang = v as Lang;
           await this.plugin.saveSettings();
           this.display(); // re-render the tab in the new language
+        });
+      });
+    // Estilo do crow's foot.
+    new Setting(containerEl)
+      .setName(t("settingsCrowFoot"))
+      .setDesc(t("settingsCrowFootDesc"))
+      .addDropdown((dd) => {
+        dd.addOption("inverted", t("crowFootInverted"));
+        dd.addOption("original", t("crowFootOriginal"));
+        dd.setValue(this.plugin.settings.crowFoot).onChange(async (v) => {
+          this.plugin.settings.crowFoot = v as "original" | "inverted";
+          await this.plugin.saveSettings();
+          this.plugin.rerenderLiveBlocks(); // aplica já aos diagramas abertos
         });
       });
   }

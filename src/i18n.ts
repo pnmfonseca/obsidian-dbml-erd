@@ -17,6 +17,7 @@ const en: Dict = {
   noTables: "DBML has no tables.",
   rendering: "Rendering ERD…",
   layoutError: "Layout error: {msg}",
+  includeError: "DBML @include: {msg}",
   // edge menu
   resetRoute: "Reset route",
   relOneToMany: "One to many (1 → ∞)",
@@ -24,7 +25,6 @@ const en: Dict = {
   relOneToOne: "One to one (1 → 1)",
   relManyToMany: "Many to many (∞ ↔ ∞)",
   deselect: "Deselect",
-  changeRelTypeFail: "Could not change the relationship type.",
   deleteVertex: "Delete vertex",
   // header menu
   renameTable: "Rename table…",
@@ -43,19 +43,21 @@ const en: Dict = {
   changeTypePrompt: "New data type",
   // notices / failures
   locateBlockFail: "DBML ERD: could not locate the block to edit.",
-  renameTableFail:
-    'Could not rename "{name}" (valid name? letters, numbers and _ only).',
-  deleteTableFail: 'Could not delete table "{name}".',
-  renameColumnFail: "Could not rename the column.",
-  changeTypeFail:
-    "Could not change the type (use letters, numbers, _ and parentheses).",
-  tableNotFound: 'DBML ERD: table "{name}" was not found.',
+  externalEditWarn:
+    '"{name}" is defined in an included file (@include) and can\'t be edited from this block — edit it in that file.',
+  externalRelWarn:
+    "This relation ({rel}) is defined in an included file (@include) and can't be changed from this block — edit it in that file.",
   // modals
   cancel: "Cancel",
   save: "Save",
   // settings
   settingsLanguage: "Language",
   settingsLanguageDesc: "Interface language for menus, dialogs and notices.",
+  settingsCrowFoot: "Crow's foot style",
+  settingsCrowFootDesc:
+    "Inverted opens the fan on the entity (clear crow's foot). Original converges on the entity (looks like an arrow on horizontal links).",
+  crowFootInverted: "Inverted",
+  crowFootOriginal: "Original",
 };
 
 const es: Dict = {
@@ -63,13 +65,13 @@ const es: Dict = {
   noTables: "DBML sin tablas.",
   rendering: "Renderizando ERD…",
   layoutError: "Error de layout: {msg}",
+  includeError: "DBML @include: {msg}",
   resetRoute: "Restablecer ruta",
   relOneToMany: "Uno a muchos (1 → ∞)",
   relManyToOne: "Muchos a uno (∞ → 1)",
   relOneToOne: "Uno a uno (1 → 1)",
   relManyToMany: "Muchos a muchos (∞ ↔ ∞)",
   deselect: "Deseleccionar",
-  changeRelTypeFail: "No se pudo cambiar el tipo de relación.",
   deleteVertex: "Eliminar vértice",
   renameTable: "Renombrar tabla…",
   renameTablePrompt: "Nuevo nombre de la tabla",
@@ -85,18 +87,20 @@ const es: Dict = {
   changeType: "Cambiar tipo…",
   changeTypePrompt: "Nuevo tipo de dato",
   locateBlockFail: "DBML ERD: no se pudo ubicar el bloque para editar.",
-  renameTableFail:
-    'No se pudo renombrar "{name}" (¿nombre válido? solo letras, números y _).',
-  deleteTableFail: 'No se pudo eliminar la tabla "{name}".',
-  renameColumnFail: "No se pudo renombrar la columna.",
-  changeTypeFail:
-    "No se pudo cambiar el tipo (use letras, números, _ y paréntesis).",
-  tableNotFound: 'DBML ERD: no se encontró la tabla "{name}".',
+  externalEditWarn:
+    '"{name}" está definida en un archivo incluido (@include) y no se puede editar desde este bloque — edítala en ese archivo.',
+  externalRelWarn:
+    "Esta relación ({rel}) está definida en un archivo incluido (@include) y no se puede cambiar desde este bloque — edítala en ese archivo.",
   cancel: "Cancelar",
   save: "Guardar",
   settingsLanguage: "Idioma",
   settingsLanguageDesc:
     "Idioma de la interfaz para menús, diálogos y avisos.",
+  settingsCrowFoot: "Estilo de pata de gallo",
+  settingsCrowFootDesc:
+    "Invertido abre el abanico sobre la entidad (pata de gallo clara). Original converge en la entidad (parece una flecha en enlaces horizontales).",
+  crowFootInverted: "Invertido",
+  crowFootOriginal: "Original",
 };
 
 const dicts: Record<Lang, Dict> = { en, es };

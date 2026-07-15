@@ -463,9 +463,18 @@ class Diagram extends MarkdownRenderChild {
     const dir = side === "E" ? 1 : -1;
     if (kind === "many") {
       // pata de gallo (crow's foot): el esquema no conoce el mínimo, sin marca extra
-      g.appendChild(this.line(x + dir * 11, y - 6, x, y));
-      g.appendChild(this.line(x + dir * 11, y, x, y));
-      g.appendChild(this.line(x + dir * 11, y + 6, x, y));
+ 
+      // ORIGINAL
+      // g.appendChild(this.line(x + dir * 11, y - 6, x, y));
+      // g.appendChild(this.line(x + dir * 11, y, x, y));
+      // g.appendChild(this.line(x + dir * 11, y + 6, x, y));
+
+      // MODIFICADO
+        // convergindo num ponto sobre a linha de ligação
+        g.appendChild(this.line(x + dir * 11, y, x, y - 6));
+        g.appendChild(this.line(x + dir * 11, y, x, y + 6));
+        g.appendChild(this.line(x + dir * 11, y, x, y)); // dedo do meio (opcional)
+  
     } else if (optional) {
       // "cero o uno": círculo (FK nullable)
       g.appendChild(this.circle(x + dir * 9, y, 4));

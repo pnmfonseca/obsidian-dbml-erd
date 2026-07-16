@@ -9,6 +9,23 @@ Obsidian plugin that renders ` ```dbml ` code blocks as **interactive entity-rel
 
 ---
 
+## Fork notes
+
+This is a personal fork ([Pedro Fonseca](https://github.com/pnmdfonseca)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pfonseca`) so the two don't collide.
+
+Added on top of upstream:
+
+- **`@include` directive** — compose a diagram from tables/relationships defined in another `.dbml` file (or another note), e.g. `@include attachments/shared-schema.dbml`. Resolved by textual expansion before parsing, so `Ref:` lines across included files work like any other relationship. Supports nested includes with cycle detection.
+- **Live auto-reload** — editing an included file updates every open diagram that depends on it, without needing to touch the note itself or reopen it.
+- **Configurable crow's-foot style** — Settings → DBML ER Diagrams → *Crow's foot style*: `Inverted` (fan opens on the entity, unambiguous even on horizontal links) or `Original` (upstream's default geometry, which can read as an arrowhead on horizontal links). Applies live to open diagrams.
+- **External-source edit guard** — renaming/deleting a table or column, changing a type, recoloring a header, or changing a relationship's cardinality now shows a clear notice instead of silently failing when the target is defined in an `@include`d file rather than the block itself.
+
+None of this changes the on-disk format for diagrams that don't use `@include` — existing notes and their `@pos`/`@view`/`@size`/`@edge` annotations keep working as-is.
+
+The rest of this README documents the base plugin as written by the original author; it's still accurate for everything except the items above.
+
+---
+
 ## What it does
 
 You write a ` ```dbml ` block with your tables and relationships and the plugin draws it as an SVG ERD, with automatic layout, cardinality markers and interactive editing. Every change you make from the diagram (rename, move, color, cardinality, delete…) is written back into the note's own dbml block — the block is the single source of truth.
@@ -92,6 +109,7 @@ Ref: contract.client_id > client.client_id
 - Table and column notes (`Note: '...'`, `note: '...'`).
 - Optional `// height: N` directive (canvas height in px).
 - `//` comments.
+- **(fork)** `@include <path>` — expands another `.dbml` file's content in place before parsing. Accepts a bare directive or `// @include <path>`. Path resolves like an Obsidian link (relative to the current note, aware of the attachments folder), falling back to a vault-absolute or note-relative path.
 
 > A deliberate subset of DBML, enough for controlled schemas. It does not yet include enums, table groups or composite keys.
 
@@ -122,7 +140,7 @@ Paste the resulting block into a note inside ` ```dbml ` and the plugin renders 
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the latest release.
-2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/`.
+2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/` (or `dbml-erd-pacheco/` for this fork — the folder name doesn't need to match the plugin ID, but keeping them aligned avoids confusion if you ever run both).
 3. Enable the plugin under **Settings → Community plugins**.
 
 ---
@@ -161,3 +179,4 @@ The workflow compiles and attaches `main.js`, `manifest.json` and `styles.css` t
 ## License
 
 MIT © 2026 Wilmar Rojas Avendaño
+MIT © 2026 Pedro Fonseca (modifications)

@@ -1,9 +1,10 @@
 {
-  "id": "dbml-erd",
-  "name": "DBML ER Diagrams",
-  "version": "0.1.21",
+  "id": "dbml-erd-pfonseca",
+  "name": "DBML ER Diagrams (PFonseca fork)",
+  "version": "0.1.21-pfonseca.1",
   "minAppVersion": "1.6.0",
-  "description": "Render dbml code blocks as entity-relationship diagrams with orthogonal, dbdiagram.io-style routing.",
-  "author": "Wilmar Rojas Avendaño",
+  "description": "Render dbml code blocks as entity-relationship diagrams with orthogonal, dbdiagram.io-style routing. Fork of dbml-erd by Wilmar Rojas Avendaño, adding @include, live auto-reload and configurable crow's foot style.",
+  "author": "Wilmar Rojas Avendaño; fork by Pedro Fonseca",
+  "authorUrl": "https://github.com/wrojasa/obsidian-dbml-erd",
   "isDesktopOnly": false
 }

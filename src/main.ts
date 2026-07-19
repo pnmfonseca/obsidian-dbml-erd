@@ -46,7 +46,7 @@ interface DbmlErdSettings {
   // linha (parece uma seta em ligações horizontais). Default: inverted.
   crowFoot: "original" | "inverted";
 }
-const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "inverted" };
+const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "original" };
 
 export default class DbmlErdPlugin extends Plugin {
   settings: DbmlErdSettings = { ...DEFAULT_SETTINGS };

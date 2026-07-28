@@ -15,6 +15,7 @@ import { t, setLang, Lang, LANGS } from "./i18n";
 import {
   parseDBML,
   Model,
+  Table,
   Ref,
   setHeaderColorInLine,
   renameTableInBlock,
@@ -46,7 +47,7 @@ interface DbmlErdSettings {
   // linha (parece uma seta em ligações horizontais). Default: inverted.
   crowFoot: "original" | "inverted";
 }
-const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "original" };
+const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "inverted" };
 
 export default class DbmlErdPlugin extends Plugin {
   settings: DbmlErdSettings = { ...DEFAULT_SETTINGS };
@@ -234,7 +235,7 @@ export default class DbmlErdPlugin extends Plugin {
       );
       return;
     }
-    if (model.tables.length === 0) {
+    if (model.tables.length === 0 && model.partials.length === 0) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("noTables"));
       return;
@@ -518,13 +519,15 @@ class Diagram extends MarkdownRenderChild {
     return `${r.from}.${r.fromCol}->${r.to}.${r.toCol}`;
   }
 
-  // rectángulos de tabla (obstáculos) excluyendo las indicadas
+  // rectángulos de tabla (obstáculos) excluyendo las indicadas. Incluye los
+  // partials: aunque nunca son extremo de una relación, sí deben esquivarse
+  // al rutear líneas entre tablas reales.
   private tableRects(
     ignore: string[]
   ): { x: number; y: number; w: number; h: number }[] {
     const ig = new Set(ignore);
     const out: { x: number; y: number; w: number; h: number }[] = [];
-    for (const t of this.model.tables) {
+    for (const t of [...this.model.tables, ...this.model.partials]) {
       if (ig.has(t.name)) continue;
       const p = this.pos[t.name];
       if (!p) continue;
@@ -591,7 +594,7 @@ class Diagram extends MarkdownRenderChild {
     // cercano a baseMid que no cruce ninguna tabla en los 3 tramos.
     const margin = 22;
     const cands = [baseMid, ax2, bx2];
-    for (const t of this.model.tables) {
+    for (const t of [...this.model.tables, ...this.model.partials]) {
       const p = this.pos[t.name];
       if (!p) continue;
       cands.push(p.x - margin, p.x + (p.w || NODE_W) + margin);
@@ -1169,11 +1172,21 @@ class Diagram extends MarkdownRenderChild {
 
   // ---- dibujo de nodos ----
   private drawNodes() {
-    this.model.tables.forEach((t) => {
+    this.drawNodeGroup(this.model.tables, true);
+    // Partials: se pueden mover en el canvas (y su posición se persiste como
+    // @pos, igual que una tabla), pero sin menús de edición estructural — su
+    // contenido se edita en la propia declaración TablePartial, no aquí. La
+    // clase "partial" los distingue visualmente (ver styles.css).
+    this.drawNodeGroup(this.model.partials, false);
+  }
+
+  private drawNodeGroup(list: Table[], interactive: boolean) {
+    list.forEach((t) => {
       const P = this.pos[t.name];
       if (!P) return;
       const g = activeDocument.createElementNS(NS, "g");
       g.classList.add("dbml-node");
+      if (!interactive) g.classList.add("partial");
       g.setAttribute("transform", `translate(${P.x},${P.y})`);
       const h = HEAD_H + t.cols.length * ROW_H;
 
@@ -1244,7 +1257,9 @@ class Diagram extends MarkdownRenderChild {
         g.appendChild(ty);
       });
 
-      this.enableDrag(g, t.name);
+      // Arrastre siempre activo (tablas y partials); `interactive` solo decide
+      // si el tap sin arrastre en cabecera/columna abre menú de edición.
+      this.enableDrag(g, t.name, interactive);
       this.nodeLayer.appendChild(g);
     });
   }
@@ -1322,7 +1337,11 @@ class Diagram extends MarkdownRenderChild {
   }
 
   // ---- interacción ----
-  private enableDrag(g: SVGGElement, name: string) {
+  // `menus`: si es false, el arrastre funciona igual (posición + @pos), pero
+  // el tap sin arrastre sobre cabecera/columna no abre menú. Se usa para los
+  // TablePartial: se pueden reordenar en el canvas, pero su contenido se
+  // edita en la propia declaración `TablePartial`, no desde este nodo.
+  private enableDrag(g: SVGGElement, name: string, menus = true) {
     let sx = 0,
       sy = 0,
       ox = 0,
@@ -1381,7 +1400,7 @@ class Diagram extends MarkdownRenderChild {
           this.scheduleSaveLayout();
         } else if (e.type === "pointercancel") {
           // gesto abortado: no abrir menú
-        } else if (onHeader || colIdx >= 0) {
+        } else if (menus && (onHeader || colIdx >= 0)) {
           // Evita que este pointerup llegue a document: el Menu de Obsidian
           // registra ahí su listener de auto-cierre y, en táctil, el mismo
           // evento (o un click/touchend sintético) cerraría el menú al instante.
@@ -1622,9 +1641,10 @@ class Diagram extends MarkdownRenderChild {
       const body = lines
         .slice(open + 1, close)
         .filter((l) => !/^\s*\/\/\s*@(pos|view|size|edge)\b/.test(l));
-      // solo persiste posición de tablas que el usuario movió (las demás
-      // siguen con auto-layout); la vista siempre se persiste.
-      const posLines = this.model.tables
+      // solo persiste posición de nodos que el usuario movió (las demás siguen
+      // con auto-layout); incluye partials, ahora también arrastrables. La
+      // vista siempre se persiste.
+      const posLines = [...this.model.tables, ...this.model.partials]
         .filter((t) => this.pos[t.name] && this.movedTables.has(t.name))
         .map((t) => {
           const p = this.pos[t.name];
@@ -1809,7 +1829,7 @@ class Diagram extends MarkdownRenderChild {
       minY = 1e9,
       maxX = -1e9,
       maxY = -1e9;
-    for (const t of this.model.tables) {
+    for (const t of [...this.model.tables, ...this.model.partials]) {
       const P = this.pos[t.name];
       if (!P) continue;
       minX = Math.min(minX, P.x);

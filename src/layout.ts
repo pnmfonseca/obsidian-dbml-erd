@@ -55,7 +55,7 @@ function colRowY(model: Model, table: string, col: string): number {
 }
 
 export async function computeLayout(model: Model): Promise<LayoutResult> {
-  const children: ElkNode[] = model.tables.map((t) => {
+  const tableChildren: ElkNode[] = model.tables.map((t) => {
     const h = tableHeight(t.cols.length);
     const ports: ElkPort[] = [];
     model.refs.forEach((r, i) => {
@@ -78,6 +78,19 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
       layoutOptions: { "elk.portConstraints": "FIXED_POS" },
     };
   });
+
+  // Los TablePartial no participan en relaciones (Ref: nunca los tiene como
+  // extremo, ver parser.ts) ni tienen puertos: se listan como nodos ELK sin
+  // conexiones, para que el algoritmo layered los ubique sin superponerse a
+  // las tablas. No tienen posición propia persistida (@pos) — no son
+  // arrastrables — así que su posición siempre sale de este cálculo.
+  const partialChildren: ElkNode[] = model.partials.map((t) => ({
+    id: t.name,
+    width: NODE_W,
+    height: tableHeight(t.cols.length),
+  }));
+
+  const children: ElkNode[] = [...tableChildren, ...partialChildren];
 
   // source desde EAST, target hacia WEST (caso jerárquico común)
   const edges: ElkExtendedEdge[] = model.refs.map((r, i) => ({

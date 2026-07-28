@@ -26,6 +26,7 @@ export interface Ref {
 }
 export interface Model {
   tables: Table[];
+  partials: Table[];
   refs: Ref[];
 }
 
@@ -103,18 +104,31 @@ function matchBrace(src: string, openIdx: number): number {
 }
 
 // Expande bloques `TablePartial nombre { ... }` y las líneas de inyección
-// `~nombre` dentro de un `Table { ... }`, por sustitución textual, antes de que
-// el resto de parseDBML escanee las tablas. Así el resto del parser no necesita
-// saber que los partials existen: ve las columnas ya "pegadas" en el orden
-// correcto, y toda la lógica downstream (Refs, FKs, orden de filas) funciona
-// sin cambios. Soporta partials anidados (uno que inyecta a otro) con
-// detección de ciclos; un `~nombre` que no resuelve a ningún partial se borra
-// en silencio (mismo criterio que este parser ya aplica a Refs inválidas).
-export function expandTablePartials(input: string): string {
+// `~nombre` dentro de un `Table { ... }`, por sustitución textual, antes de
+// que el resto de parseDBML escanee las tablas.
+//
+// Cada línea `~nombre` dentro de un Table real se sustituye por el cuerpo
+// resuelto del partial (columnas ya "pegadas" en el orden correcto), así que
+// el resto del parser no necesita saber que los partials existen para ese
+// caso: Refs, FKs y orden de filas funcionan sin cambios.
+//
+// Además, cada bloque `TablePartial nombre { ... }` se reescribe en el propio
+// texto como un `Table nombre { ... }` equivalente (con su cuerpo también ya
+// resuelto, incluyendo partials anidados). Esto permite que el partial se
+// escanee con la MISMA lógica de columnas que cualquier tabla — sin duplicar
+// ese parseo — y el resultado se muestra en el diagrama como un nodo aparte.
+// `parseDBML` separa después esas entradas de `tables` usando `partialNames`.
+//
+// Soporta partials anidados (uno que inyecta a otro) con detección de ciclos;
+// un `~nombre` que no resuelve a ningún partial se borra en silencio (mismo
+// criterio que este parser ya aplica a Refs inválidas).
+export function expandTablePartials(
+  input: string
+): { text: string; partialNames: Set<string> } {
   const partialDeclRe =
     /(?:^|\n)[ \t]*TablePartial[ \t]+"?([A-Za-z0-9_]+)"?\s*\{/g;
   const raw = new Map<string, string>(); // nombre -> cuerpo crudo (sin expandir)
-  const spans: [number, number][] = []; // [inicio, fin) de cada bloque, a eliminar del texto
+  const spans: { name: string; s: number; e: number }[] = []; // span de cada bloque en `input`
   let m: RegExpExecArray | null;
   while ((m = partialDeclRe.exec(input)) !== null) {
     const name = m[1];
@@ -122,10 +136,10 @@ export function expandTablePartials(input: string): string {
     const closeIdx = matchBrace(input, braceIdx);
     if (closeIdx < 0) continue;
     raw.set(name, input.slice(braceIdx + 1, closeIdx));
-    spans.push([m.index, closeIdx + 1]);
+    spans.push({ name, s: m.index, e: closeIdx + 1 });
     partialDeclRe.lastIndex = closeIdx + 1; // no re-escanear dentro del cuerpo
   }
-  if (raw.size === 0) return input;
+  if (raw.size === 0) return { text: input, partialNames: new Set() };
 
   const injectRe = /^[ \t]*~"?([A-Za-z0-9_]+)"?[ \t]*$/;
   const resolved = new Map<string, string>();
@@ -145,24 +159,36 @@ export function expandTablePartials(input: string): string {
     return out;
   }
 
-  // 1) quita los bloques TablePartial del texto (de atrás hacia delante, para
-  //    no invalidar los índices de los bloques anteriores)
+  // 1) sustituye cada bloque `TablePartial nombre { ... }` por un bloque
+  //    `Table nombre { ... }` con el cuerpo ya resuelto. De atrás hacia
+  //    delante, para no invalidar los índices de los bloques anteriores.
   let out = input;
-  for (const [s, e] of [...spans].sort((a, b) => b[0] - a[0]))
-    out = out.slice(0, s) + out.slice(e);
+  for (const span of [...spans].sort((a, b) => b.s - a.s)) {
+    const body = resolve(span.name, []);
+    out =
+      out.slice(0, span.s) +
+      `\nTable ${span.name} {${body}\n}` +
+      out.slice(span.e);
+  }
 
-  // 2) sustituye cada línea `~nombre` restante por el cuerpo resuelto
-  return out
+  // 2) sustituye cada línea `~nombre` restante (dentro de tablas reales) por
+  //    el cuerpo resuelto del partial correspondiente. Los cuerpos insertados
+  //    en el paso 1 ya están completamente resueltos, así que esto solo
+  //    afecta a las tablas reales del bloque, no se re-procesa nada del paso 1.
+  out = out
     .split("\n")
     .map((line) => {
       const im = line.match(injectRe);
       return im ? resolve(im[1], []) : line;
     })
     .join("\n");
+
+  return { text: out, partialNames: new Set(raw.keys()) };
 }
 
 export function parseDBML(input: string): Model {
-  const src = expandTablePartials(stripLineComments(input));
+  const { text, partialNames } = expandTablePartials(stripLineComments(input));
+  const src = text;
   const tables: Table[] = [];
   const refs: Ref[] = [];
 
@@ -278,13 +304,26 @@ export function parseDBML(input: string): Model {
     validRefs.push(r);
   }
 
-  // marca FKs (lado 'from' de cada relación)
-  for (const r of validRefs) {
+  // Los TablePartial se escanearon como si fueran tablas (para reusar el
+  // parseo de columnas), pero no son tablas reales del diagrama: se separan
+  // aquí. Cualquier Ref que involucre a uno de ellos se descarta — un partial
+  // no es un extremo válido de relación, no hay forma de saber qué tabla
+  // consumidora sería el destino real (esto solo ocurre si el partial trae
+  // un `ref:` inline en su propia definición, caso excepcional).
+  const realTables = tables.filter((t) => !partialNames.has(t.name));
+  const partials = tables.filter((t) => partialNames.has(t.name));
+  const cleanRefs = validRefs.filter(
+    (r) => !partialNames.has(r.from) && !partialNames.has(r.to)
+  );
+
+  // marca FKs (lado 'from' de cada relación) — sobre cleanRefs, para no
+  // marcar como fk una columna de un partial cuya Ref se acaba de descartar.
+  for (const r of cleanRefs) {
     const c = byName.get(r.from)?.cols.find((c) => c.name === r.fromCol);
     if (c) c.fk = true;
   }
 
-  return { tables, refs: validRefs };
+  return { tables: realTables, partials, refs: cleanRefs };
 }
 
 // Reemplaza coincidencias de re en line solo FUERA de cadenas entre comillas

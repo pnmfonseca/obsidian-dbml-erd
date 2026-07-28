@@ -80,6 +80,21 @@
   text-anchor: middle;
 }
 
+/* TablePartial: se pueden mover en el canvas (igual que una tabla — ver
+   drawNodeGroup/enableDrag en main.ts), pero sin menús de edición
+   estructural — su contenido se edita en la propia declaración
+   TablePartial. Estilo visualmente distinto: borde punteado y cabecera
+   neutra, para que se lean como plantilla y no como tabla real. */
+.dbml-node.partial .dbml-body {
+  stroke-dasharray: 4 3;
+}
+.dbml-node.partial .dbml-head {
+  fill: var(--background-modifier-border);
+}
+.dbml-node.partial .dbml-head-txt {
+  fill: var(--text-muted);
+}
+
 /* aristas */
 .dbml-edge {
   fill: none;

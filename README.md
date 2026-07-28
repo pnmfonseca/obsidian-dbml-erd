@@ -11,12 +11,12 @@ Obsidian plugin that renders ` ```dbml ` code blocks as **interactive entity-rel
 
 ## Fork notes
 
-This is a personal fork ([Pedro Fonseca](https://github.com/REPLACE_WITH_YOUR_USERNAME)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pfonseca`) so the two don't collide.
+This is a personal fork ([Pedro Fonseca](https://github.com/REPLACE_WITH_YOUR_USERNAME)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pacheco`) so the two don't collide.
 
 Added on top of upstream:
 
 - **`@include` directive** — compose a diagram from tables/relationships defined in another `.dbml` file (or another note), e.g. `@include attachments/shared-schema.dbml`. Resolved by textual expansion before parsing, so `Ref:` lines across included files work like any other relationship. Supports nested includes with cycle detection.
-- **`TablePartial` support** — declare a reusable block of columns with `TablePartial name { ... }` and inject it into any table with a bare `~name` line inside the table body. Partials can inject other partials (nested), with cycle detection. Columns arrive in the table in the order they're injected, so cardinality markers and layout are unaffected.
+- **`TablePartial` support** — declare a reusable block of columns with `TablePartial name { ... }` and inject it into any table with a bare `~name` line inside the table body. Partials can inject other partials (nested), with cycle detection. Columns arrive in the table in the order they're injected, so cardinality markers and layout are unaffected. The partial itself is also drawn on the canvas as a read-only node (dashed border, muted header) — positioned by the same auto-layout as the tables, but not draggable and without the rename/color/delete menus real tables get.
 - **Live auto-reload** — editing an included file updates every open diagram that depends on it, without needing to touch the note itself or reopen it.
 - **Configurable crow's-foot style** — Settings → DBML ER Diagrams → *Crow's foot style*: `Inverted` (fan opens on the entity, unambiguous even on horizontal links) or `Original` (upstream's default geometry, which can read as an arrowhead on horizontal links). Applies live to open diagrams.
 - **External-source edit guard** — renaming/deleting a table or column, changing a type, recoloring a header, or changing a relationship's cardinality now shows a clear notice instead of silently failing when the target is defined in an `@include`d file or a `TablePartial` rather than the table's own block.
@@ -142,7 +142,7 @@ Paste the resulting block into a note inside ` ```dbml ` and the plugin renders 
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the latest release.
-2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/` (or `dbml-erd-pfonseca/` for this fork — the folder name doesn't need to match the plugin ID, but keeping them aligned avoids confusion if you ever run both).
+2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/` (or `dbml-erd-pacheco/` for this fork — the folder name doesn't need to match the plugin ID, but keeping them aligned avoids confusion if you ever run both).
 3. Enable the plugin under **Settings → Community plugins**.
 
 ---

@@ -11,7 +11,7 @@ Obsidian plugin that renders ` ```dbml ` code blocks as **interactive entity-rel
 
 ## Fork notes
 
-This is a personal fork ([Pedro Fonseca](https://github.com/REPLACE_WITH_YOUR_USERNAME)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pacheco`) so the two don't collide.
+This is a personal fork ([Pedro Fonseca](https://github.com/REPLACE_WITH_YOUR_USERNAME)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pfonseca`) so the two don't collide.
 
 Added on top of upstream:
 
@@ -142,7 +142,7 @@ Paste the resulting block into a note inside ` ```dbml ` and the plugin renders 
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the latest release.
-2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/` (or `dbml-erd-pacheco/` for this fork — the folder name doesn't need to match the plugin ID, but keeping them aligned avoids confusion if you ever run both).
+2. Copy the three files to `<vault>/.obsidian/plugins/dbml-erd/` (or `dbml-erd-pfonseca/` for this fork — the folder name doesn't need to match the plugin ID, but keeping them aligned avoids confusion if you ever run both).
 3. Enable the plugin under **Settings → Community plugins**.
 
 ---

@@ -61,6 +61,9 @@ const en: Dict = {
   settingsShowPartialUses: "Show TablePartial usage lines",
   settingsShowPartialUsesDesc:
     "Draw a dashed line from a table or partial to each TablePartial it injects with ~name. Purely informational — no cardinality, not editable.",
+  settingsShowPartials: "Show TablePartial nodes",
+  settingsShowPartialsDesc:
+    "Draw TablePartial blocks as nodes on the diagram. Turn off to reduce clutter in schemas with many partials — their columns still appear, expanded, in the tables that use them.",
 };
 
 const es: Dict = {
@@ -107,6 +110,9 @@ const es: Dict = {
   settingsShowPartialUses: "Mostrar líneas de uso de TablePartial",
   settingsShowPartialUsesDesc:
     "Dibuja una línea punteada desde una tabla o partial hasta cada TablePartial que inyecta con ~nombre. Puramente informativa — sin cardinalidad, no editable.",
+  settingsShowPartials: "Mostrar nodos de TablePartial",
+  settingsShowPartialsDesc:
+    "Dibuja los bloques TablePartial como nodos en el diagrama. Desactívalo para reducir el ruido visual en esquemas con muchos partials — sus columnas siguen apareciendo, ya expandidas, en las tablas que los usan.",
 };
 
 const dicts: Record<Lang, Dict> = { en, es };

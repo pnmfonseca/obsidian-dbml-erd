@@ -50,11 +50,17 @@ interface DbmlErdSettings {
   // liga/desliga as linhas tracejadas "usa" entre uma tabela/partial e o
   // TablePartial que injeta via ~nome. Default: visíveis.
   showPartialUses: boolean;
+  // liga/desliga o próprio nó do TablePartial no diagrama (útil para reduzir
+  // ruído visual em esquemas com muitos partials). Desligar isto também
+  // esconde as linhas "usa" — não faz sentido apontar para algo invisível.
+  // Default: visíveis.
+  showPartials: boolean;
 }
 const DEFAULT_SETTINGS: DbmlErdSettings = {
   lang: "en",
   crowFoot: "inverted",
   showPartialUses: true,
+  showPartials: true,
 };
 
 export default class DbmlErdPlugin extends Plugin {
@@ -243,7 +249,8 @@ export default class DbmlErdPlugin extends Plugin {
       );
       return;
     }
-    if (model.tables.length === 0 && model.partials.length === 0) {
+    const wouldShowPartials = this.settings.showPartials && model.partials.length > 0;
+    if (model.tables.length === 0 && !wouldShowPartials) {
       el.empty();
       el.createDiv({ cls: "dbml-erd-wrap" }).setText(t("noTables"));
       return;
@@ -534,15 +541,24 @@ class Diagram extends MarkdownRenderChild {
     return `${r.from}.${r.fromCol}->${r.to}.${r.toCol}`;
   }
 
+  // si los nodos TablePartial se dibujan en este render (ajuste global). Si
+  // están apagados, no son obstáculo ni entran en el encuadre ni se dibujan.
+  private showPartials(): boolean {
+    return this.plugin?.settings.showPartials ?? true;
+  }
+
   // rectángulos de tabla (obstáculos) excluyendo las indicadas. Incluye los
-  // partials: aunque nunca son extremo de una relación, sí deben esquivarse
-  // al rutear líneas entre tablas reales.
+  // partials (si están visibles): aunque nunca son extremo de una relación,
+  // sí deben esquivarse al rutear líneas entre tablas reales.
   private tableRects(
     ignore: string[]
   ): { x: number; y: number; w: number; h: number }[] {
     const ig = new Set(ignore);
     const out: { x: number; y: number; w: number; h: number }[] = [];
-    for (const t of [...this.model.tables, ...this.model.partials]) {
+    const list = this.showPartials()
+      ? [...this.model.tables, ...this.model.partials]
+      : this.model.tables;
+    for (const t of list) {
       if (ig.has(t.name)) continue;
       const p = this.pos[t.name];
       if (!p) continue;
@@ -609,7 +625,10 @@ class Diagram extends MarkdownRenderChild {
     // cercano a baseMid que no cruce ninguna tabla en los 3 tramos.
     const margin = 22;
     const cands = [baseMid, ax2, bx2];
-    for (const t of [...this.model.tables, ...this.model.partials]) {
+    const obstacleList = this.showPartials()
+      ? [...this.model.tables, ...this.model.partials]
+      : this.model.tables;
+    for (const t of obstacleList) {
       const p = this.pos[t.name];
       if (!p) continue;
       cands.push(p.x - margin, p.x + (p.w || NODE_W) + margin);
@@ -757,12 +776,14 @@ class Diagram extends MarkdownRenderChild {
 
   // ---- dibujo de líneas "usa" (TablePartial) ----
   // Puramente informativas: sin selección, sin waypoints editables, sin
-  // markers de cardinalidad (no son Ref). Se ocultan del todo si el ajuste
-  // "Mostrar líneas de uso de TablePartial" está desactivado.
+  // markers de cardinalidad (no son Ref). Se ocultan si el ajuste "Mostrar
+  // líneas de uso de TablePartial" está desactivado, o si los propios nodos
+  // de partial están apagados (una línea hacia algo invisible no aporta nada).
   private redrawUses() {
     while (this.usesLayer.firstChild)
       this.usesLayer.removeChild(this.usesLayer.firstChild);
     if (!(this.plugin?.settings.showPartialUses ?? true)) return;
+    if (!this.showPartials()) return;
     this.model.uses.forEach((u, i) => {
       const pts = this.usePts(u, i);
       if (!pts || pts.length < 2) return;
@@ -1246,8 +1267,9 @@ class Diagram extends MarkdownRenderChild {
     // Partials: se pueden mover en el canvas (y su posición se persiste como
     // @pos, igual que una tabla), pero sin menús de edición estructural — su
     // contenido se edita en la propia declaración TablePartial, no aquí. La
-    // clase "partial" los distingue visualmente (ver styles.css).
-    this.drawNodeGroup(this.model.partials, false);
+    // clase "partial" los distingue visualmente (ver styles.css). Se omiten
+    // por completo si el ajuste "Mostrar TablePartial" está desactivado.
+    if (this.showPartials()) this.drawNodeGroup(this.model.partials, false);
   }
 
   private drawNodeGroup(list: Table[], interactive: boolean) {
@@ -1900,7 +1922,10 @@ class Diagram extends MarkdownRenderChild {
       minY = 1e9,
       maxX = -1e9,
       maxY = -1e9;
-    for (const t of [...this.model.tables, ...this.model.partials]) {
+    const fitList = this.showPartials()
+      ? [...this.model.tables, ...this.model.partials]
+      : this.model.tables;
+    for (const t of fitList) {
       const P = this.pos[t.name];
       if (!P) continue;
       minX = Math.min(minX, P.x);
@@ -2054,6 +2079,19 @@ class DbmlErdSettingTab extends PluginSettingTab {
         tg.setValue(this.plugin.settings.showPartialUses).onChange(
           async (v) => {
             this.plugin.settings.showPartialUses = v;
+            await this.plugin.saveSettings();
+            this.plugin.rerenderLiveBlocks();
+          }
+        );
+      });
+    // Nodos de TablePartial en el diagrama.
+    new Setting(containerEl)
+      .setName(t("settingsShowPartials"))
+      .setDesc(t("settingsShowPartialsDesc"))
+      .addToggle((tg) => {
+        tg.setValue(this.plugin.settings.showPartials).onChange(
+          async (v) => {
+            this.plugin.settings.showPartials = v;
             await this.plugin.saveSettings();
             this.plugin.rerenderLiveBlocks();
           }

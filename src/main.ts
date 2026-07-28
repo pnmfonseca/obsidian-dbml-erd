@@ -17,6 +17,7 @@ import {
   Model,
   Table,
   Ref,
+  PartialUse,
   setHeaderColorInLine,
   renameTableInBlock,
   deleteTableInBlock,
@@ -46,8 +47,15 @@ interface DbmlErdSettings {
   // a linha (leitura clara); "original" converge na entidade e abre sobre a
   // linha (parece uma seta em ligações horizontais). Default: inverted.
   crowFoot: "original" | "inverted";
+  // liga/desliga as linhas tracejadas "usa" entre uma tabela/partial e o
+  // TablePartial que injeta via ~nome. Default: visíveis.
+  showPartialUses: boolean;
 }
-const DEFAULT_SETTINGS: DbmlErdSettings = { lang: "en", crowFoot: "inverted" };
+const DEFAULT_SETTINGS: DbmlErdSettings = {
+  lang: "en",
+  crowFoot: "inverted",
+  showPartialUses: true,
+};
 
 export default class DbmlErdPlugin extends Plugin {
   settings: DbmlErdSettings = { ...DEFAULT_SETTINGS };
@@ -279,6 +287,7 @@ export default class DbmlErdPlugin extends Plugin {
       const layoutForInstance: LayoutResult = {
         nodes: freshNodes,
         edges: layout.edges,
+        uses: layout.uses,
       };
       const child = new Diagram(wrap, model, layoutForInstance, {
         height,
@@ -369,6 +378,7 @@ class Diagram extends MarkdownRenderChild {
   private model: Model;
   private pos: Record<string, NodePos>;
   private elkEdges: Pt[][]; // ruta ELK original por ref
+  private usesPaths: Pt[][]; // ruta ELK original por relación "usa" (TablePartial)
   private selKey?: string; // clave de persistencia de selección (sourcePath#linea)
   private customEdges: Record<string, Pt[]> = {}; // waypoints intermedios por ref
   // frame de anclas (extremos + lados) con el que se autorizaron los waypoints
@@ -397,6 +407,7 @@ class Diagram extends MarkdownRenderChild {
   private svg: SVGSVGElement;
   private vp: SVGGElement;
   private edgeLayer: SVGGElement;
+  private usesLayer: SVGGElement;
   private nodeLayer: SVGGElement;
   private handleLayer: SVGGElement;
 
@@ -419,6 +430,7 @@ class Diagram extends MarkdownRenderChild {
     this.model = model;
     this.pos = layout.nodes;
     this.elkEdges = layout.edges.map((e) => e.pts);
+    this.usesPaths = layout.uses.map((e) => e.pts);
     this.plugin = opts?.plugin;
     this.ctx = opts?.ctx;
     this.blockEl = opts?.el;
@@ -467,9 +479,11 @@ class Diagram extends MarkdownRenderChild {
     this.svg = activeDocument.createElementNS(NS, "svg");
     this.svg.classList.add("dbml-erd-svg");
     this.vp = activeDocument.createElementNS(NS, "g");
+    this.usesLayer = activeDocument.createElementNS(NS, "g");
     this.edgeLayer = activeDocument.createElementNS(NS, "g");
     this.nodeLayer = activeDocument.createElementNS(NS, "g");
     this.handleLayer = activeDocument.createElementNS(NS, "g");
+    this.vp.appendChild(this.usesLayer); // detrás de todo: líneas informativas
     this.vp.appendChild(this.edgeLayer);
     this.vp.appendChild(this.nodeLayer);
     this.vp.appendChild(this.handleLayer); // handles por encima de todo
@@ -484,6 +498,7 @@ class Diagram extends MarkdownRenderChild {
 
     this.drawNodes();
     this.redrawEdges();
+    this.redrawUses();
     this.redrawHandles(); // muestra handles si se restauró una selección
     this.bindPanZoom(host);
     this.bindResize(host);
@@ -738,6 +753,61 @@ class Diagram extends MarkdownRenderChild {
     }
     const pts = this.elkEdges[i];
     return pts && pts.length >= 2 ? pts : null;
+  }
+
+  // ---- dibujo de líneas "usa" (TablePartial) ----
+  // Puramente informativas: sin selección, sin waypoints editables, sin
+  // markers de cardinalidad (no son Ref). Se ocultan del todo si el ajuste
+  // "Mostrar líneas de uso de TablePartial" está desactivado.
+  private redrawUses() {
+    while (this.usesLayer.firstChild)
+      this.usesLayer.removeChild(this.usesLayer.firstChild);
+    if (!(this.plugin?.settings.showPartialUses ?? true)) return;
+    this.model.uses.forEach((u, i) => {
+      const pts = this.usePts(u, i);
+      if (!pts || pts.length < 2) return;
+      const d = this.roundedPath(this.orthogonalize(pts));
+      const path = activeDocument.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      path.classList.add("dbml-use-edge");
+      this.usesLayer.appendChild(path);
+    });
+  }
+
+  // ruta actual de una línea "usa": la de ELK si ninguno de los dos nodos se
+  // movió, o un Z simplificado si alguno se arrastró.
+  private usePts(u: PartialUse, i: number): Pt[] | null {
+    if (this.movedTables.has(u.from) || this.movedTables.has(u.to))
+      return this.manhattanNodes(u.from, u.to);
+    const pts = this.usesPaths[i];
+    return pts && pts.length >= 2 ? pts : null;
+  }
+
+  // Z simple nodo-a-nodo (centro vertical de cada uno — no hay una columna
+  // específica a la que anclar una línea "usa", a diferencia de manhattan()
+  // para Refs). Sin evasión de obstáculos a propósito: son líneas
+  // decorativas, no justifica el mismo coste que el ruteo de relaciones
+  // reales; un cruce ocasional durante un arrastre es aceptable aquí.
+  private manhattanNodes(fromName: string, toName: string): Pt[] | null {
+    const A = this.pos[fromName];
+    const B = this.pos[toName];
+    if (!A || !B) return null;
+    const ay = A.y + A.h / 2;
+    const by = B.y + B.h / 2;
+    const aCx = A.x + NODE_W / 2;
+    const bCx = B.x + NODE_W / 2;
+    const overlapX = Math.abs(bCx - aCx) < NODE_W;
+    const aRight = overlapX ? true : bCx >= aCx;
+    const bRight = overlapX ? true : !aRight;
+    const ax = aRight ? A.x + NODE_W : A.x;
+    const bx = bRight ? B.x + NODE_W : B.x;
+    const midX = (ax + bx) / 2;
+    return [
+      { x: ax, y: ay },
+      { x: midX, y: ay },
+      { x: midX, y: by },
+      { x: bx, y: by },
+    ];
   }
 
   // anclas actuales de los extremos contra los puertos de columna. Si se pasa un
@@ -1384,6 +1454,7 @@ class Diagram extends MarkdownRenderChild {
           `translate(${this.pos[name].x},${this.pos[name].y})`
         );
         this.redrawEdges();
+        this.redrawUses();
         if (this.selectedEdge) this.redrawHandles();
       };
       const up = (e: PointerEvent) => {
@@ -1974,6 +2045,19 @@ class DbmlErdSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.rerenderLiveBlocks(); // aplica já aos diagramas abertos
         });
+      });
+    // Líneas "usa" de TablePartial.
+    new Setting(containerEl)
+      .setName(t("settingsShowPartialUses"))
+      .setDesc(t("settingsShowPartialUsesDesc"))
+      .addToggle((tg) => {
+        tg.setValue(this.plugin.settings.showPartialUses).onChange(
+          async (v) => {
+            this.plugin.settings.showPartialUses = v;
+            await this.plugin.saveSettings();
+            this.plugin.rerenderLiveBlocks();
+          }
+        );
       });
   }
 }

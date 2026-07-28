@@ -58,6 +58,9 @@ const en: Dict = {
     "Inverted opens the fan on the entity (clear crow's foot). Original converges on the entity (looks like an arrow on horizontal links).",
   crowFootInverted: "Inverted",
   crowFootOriginal: "Original",
+  settingsShowPartialUses: "Show TablePartial usage lines",
+  settingsShowPartialUsesDesc:
+    "Draw a dashed line from a table or partial to each TablePartial it injects with ~name. Purely informational — no cardinality, not editable.",
 };
 
 const es: Dict = {
@@ -101,6 +104,9 @@ const es: Dict = {
     "Invertido abre el abanico sobre la entidad (pata de gallo clara). Original converge en la entidad (parece una flecha en enlaces horizontales).",
   crowFootInverted: "Invertido",
   crowFootOriginal: "Original",
+  settingsShowPartialUses: "Mostrar líneas de uso de TablePartial",
+  settingsShowPartialUsesDesc:
+    "Dibuja una línea punteada desde una tabla o partial hasta cada TablePartial que inyecta con ~nombre. Puramente informativa — sin cardinalidad, no editable.",
 };
 
 const dicts: Record<Lang, Dict> = { en, es };

@@ -102,6 +102,17 @@
   stroke-width: 1.5;
   pointer-events: none;
 }
+/* línea "usa" de TablePartial: informativa, sin cardinalidad ni selección —
+   trazo punteado y más tenue que una relación real, para no competir
+   visualmente con las líneas de Ref. */
+.dbml-use-edge {
+  fill: none;
+  stroke: var(--text-faint, var(--text-muted));
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  opacity: 0.75;
+  pointer-events: none;
+}
 .dbml-edge.selected {
   stroke: var(--interactive-accent);
   stroke-width: 2;

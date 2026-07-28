@@ -28,6 +28,7 @@ export interface EdgePath {
 export interface LayoutResult {
   nodes: Record<string, NodePos>;
   edges: EdgePath[]; // mismo orden que model.refs
+  uses: EdgePath[]; // mismo orden que model.uses (líneas TablePartial "usa")
 }
 
 // ELK (~1.6 MB) se carga perezosamente en el primer layout: el import()
@@ -79,11 +80,10 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
     };
   });
 
-  // Los TablePartial no participan en relaciones (Ref: nunca los tiene como
-  // extremo, ver parser.ts) ni tienen puertos: se listan como nodos ELK sin
-  // conexiones, para que el algoritmo layered los ubique sin superponerse a
-  // las tablas. No tienen posición propia persistida (@pos) — no son
-  // arrastrables — así que su posición siempre sale de este cálculo.
+  // Los TablePartial no participan en relaciones Ref (nunca son extremo, ver
+  // parser.ts) ni tienen puertos fijos por fila: se listan como nodos ELK sin
+  // conexiones de ese tipo, para que el algoritmo layered los ubique sin
+  // superponerse a las tablas.
   const partialChildren: ElkNode[] = model.partials.map((t) => ({
     id: t.name,
     width: NODE_W,
@@ -99,6 +99,15 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
     targets: [`t${i}_w`],
   }));
 
+  // Aristas "usa" (TablePartial): conectan nodo a nodo, sin puertos fijos por
+  // fila — no representan cardinalidad de FK, solo "este bloque inyecta este
+  // partial". ELK elige el punto de conexión automáticamente.
+  const useEdges: ElkExtendedEdge[] = model.uses.map((u, i) => ({
+    id: "u" + i,
+    sources: [u.from],
+    targets: [u.to],
+  }));
+
   const graph: ElkNode = {
     id: "root",
     layoutOptions: {
@@ -110,7 +119,7 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
       "elk.spacing.edgeNode": "25",
     },
     children,
-    edges,
+    edges: [...edges, ...useEdges],
   };
 
   const res = await (await getElk()).layout(graph);
@@ -136,7 +145,10 @@ export async function computeLayout(model: Model): Promise<LayoutResult> {
   const edgePaths: EdgePath[] = model.refs.map((_, i) => ({
     pts: byId["e" + i] ?? [],
   }));
-  return { nodes, edges: edgePaths };
+  const usePaths: EdgePath[] = model.uses.map((_, i) => ({
+    pts: byId["u" + i] ?? [],
+  }));
+  return { nodes, edges: edgePaths, uses: usePaths };
 }
 
 function port(id: string, x: number, y: number, side: string): ElkPort {

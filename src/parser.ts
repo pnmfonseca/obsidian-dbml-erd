@@ -24,10 +24,19 @@ export interface Ref {
   toCol: string;
   op: Cardinality;
 }
+// Relación "usa" entre un Table/TablePartial y el TablePartial que inyecta
+// via `~nombre`. Solo directa (from -> to); una cadena consumer->A->B se
+// representa como dos entradas (consumer->A, A->B), nunca aplanada — así el
+// grafo se lee sin ambigüedad y no necesita resolución de cadenas.
+export interface PartialUse {
+  from: string; // tabla o partial que hace `~to`
+  to: string; // partial inyectado
+}
 export interface Model {
   tables: Table[];
   partials: Table[];
   refs: Ref[];
+  uses: PartialUse[];
 }
 
 // Dado el índice de una comilla simple en src, devuelve el índice del carácter
@@ -103,9 +112,49 @@ function matchBrace(src: string, openIdx: number): number {
   return withStr >= 0 ? withStr : scanBrace(src, openIdx, false);
 }
 
+// Encuentra bloques `algo { ... }` que matchean headerRe (su grupo 1 debe ser
+// el nombre), emparejando llaves con matchBrace. No re-escanea dentro de un
+// cuerpo ya encontrado (headerRe.lastIndex salta al cierre). Se usa tanto para
+// TablePartial como para Table — dos regex distintos, misma lógica de barrido.
+function findNamedBlocks(
+  src: string,
+  headerRe: RegExp
+): { name: string; start: number; end: number; bodyStart: number; bodyEnd: number; body: string }[] {
+  const out: {
+    name: string;
+    start: number;
+    end: number;
+    bodyStart: number;
+    bodyEnd: number;
+    body: string;
+  }[] = [];
+  headerRe.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(src)) !== null) {
+    const name = m[1];
+    const braceIdx = m.index + m[0].length - 1;
+    const closeIdx = matchBrace(src, braceIdx);
+    if (closeIdx < 0) continue;
+    out.push({
+      name,
+      start: m.index,
+      end: closeIdx + 1,
+      bodyStart: braceIdx + 1,
+      bodyEnd: closeIdx,
+      body: src.slice(braceIdx + 1, closeIdx),
+    });
+    headerRe.lastIndex = closeIdx + 1; // no re-escanear dentro del cuerpo
+  }
+  return out;
+}
+
 // Expande bloques `TablePartial nombre { ... }` y las líneas de inyección
 // `~nombre` dentro de un `Table { ... }`, por sustitución textual, antes de
-// que el resto de parseDBML escanee las tablas.
+// que el resto de parseDBML escanee las tablas. También captura, ANTES de
+// sustituir nada, el grafo de "quién inyecta a quién" (`uses`): una vez hecha
+// la sustitución, esas líneas `~nombre` desaparecen del texto (se convierten
+// en columnas reales), así que es el único momento en que esa información
+// existe.
 //
 // Cada línea `~nombre` dentro de un Table real se sustituye por el cuerpo
 // resuelto del partial (columnas ya "pegadas" en el orden correcto), así que
@@ -121,27 +170,32 @@ function matchBrace(src: string, openIdx: number): number {
 //
 // Soporta partials anidados (uno que inyecta a otro) con detección de ciclos;
 // un `~nombre` que no resuelve a ningún partial se borra en silencio (mismo
-// criterio que este parser ya aplica a Refs inválidas).
+// criterio que este parser ya aplica a Refs inválidas), y no genera entrada
+// en `uses`.
 export function expandTablePartials(
   input: string
-): { text: string; partialNames: Set<string> } {
+): { text: string; partialNames: Set<string>; uses: PartialUse[] } {
   const partialDeclRe =
     /(?:^|\n)[ \t]*TablePartial[ \t]+"?([A-Za-z0-9_]+)"?\s*\{/g;
-  const raw = new Map<string, string>(); // nombre -> cuerpo crudo (sin expandir)
-  const spans: { name: string; s: number; e: number }[] = []; // span de cada bloque en `input`
-  let m: RegExpExecArray | null;
-  while ((m = partialDeclRe.exec(input)) !== null) {
-    const name = m[1];
-    const braceIdx = m.index + m[0].length - 1;
-    const closeIdx = matchBrace(input, braceIdx);
-    if (closeIdx < 0) continue;
-    raw.set(name, input.slice(braceIdx + 1, closeIdx));
-    spans.push({ name, s: m.index, e: closeIdx + 1 });
-    partialDeclRe.lastIndex = closeIdx + 1; // no re-escanear dentro del cuerpo
-  }
-  if (raw.size === 0) return { text: input, partialNames: new Set() };
+  const partialBlocks = findNamedBlocks(input, partialDeclRe);
+  if (partialBlocks.length === 0)
+    return { text: input, partialNames: new Set(), uses: [] };
+
+  const raw = new Map(partialBlocks.map((b) => [b.name, b.body]));
+  const partialNames = new Set(raw.keys());
 
   const injectRe = /^[ \t]*~"?([A-Za-z0-9_]+)"?[ \t]*$/;
+  const uses: PartialUse[] = [];
+  function scanUses(from: string, body: string) {
+    for (const line of body.split("\n")) {
+      const im = line.match(injectRe);
+      if (im && partialNames.has(im[1])) uses.push({ from, to: im[1] });
+    }
+  }
+  // usos partial -> partial: sobre el cuerpo crudo (antes de resolver), así
+  // solo se registra el uso DIRECTO, nunca la cadena aplanada.
+  for (const b of partialBlocks) scanUses(b.name, b.body);
+
   const resolved = new Map<string, string>();
   function resolve(name: string, stack: string[]): string {
     if (resolved.has(name)) return resolved.get(name)!;
@@ -163,31 +217,45 @@ export function expandTablePartials(
   //    `Table nombre { ... }` con el cuerpo ya resuelto. De atrás hacia
   //    delante, para no invalidar los índices de los bloques anteriores.
   let out = input;
-  for (const span of [...spans].sort((a, b) => b.s - a.s)) {
-    const body = resolve(span.name, []);
-    out =
-      out.slice(0, span.s) +
-      `\nTable ${span.name} {${body}\n}` +
-      out.slice(span.e);
+  for (const b of [...partialBlocks].sort((a, b2) => b2.start - a.start)) {
+    const body = resolve(b.name, []);
+    out = out.slice(0, b.start) + `\nTable ${b.name} {${body}\n}` + out.slice(b.end);
   }
 
-  // 2) sustituye cada línea `~nombre` restante (dentro de tablas reales) por
-  //    el cuerpo resuelto del partial correspondiente. Los cuerpos insertados
-  //    en el paso 1 ya están completamente resueltos, así que esto solo
-  //    afecta a las tablas reales del bloque, no se re-procesa nada del paso 1.
-  out = out
-    .split("\n")
-    .map((line) => {
-      const im = line.match(injectRe);
-      return im ? resolve(im[1], []) : line;
-    })
-    .join("\n");
+  // 2) localiza los bloques `Table` reales en el texto ya sustituido (mismo
+  //    patrón que el declRe principal de parseDBML — deben coincidir 1:1 con
+  //    lo que ese escaneo encontrará después). Para cada uno que NO sea un
+  //    partial-convertido-en-Table (esos ya están resueltos y no tienen líneas
+  //    ~nombre), registra sus usos directos y sustituye su cuerpo.
+  const tableDeclRe =
+    /(?:^|\n)[ \t]*(?:Table[ \t]+)?"?([A-Za-z0-9_]+)"?\s*(?:as\s+\w+\s*)?(?:\[([^\]]*)\]\s*)?\{/g;
+  const tableBlocks = findNamedBlocks(out, tableDeclRe);
+  for (const b of tableBlocks) {
+    if (partialNames.has(b.name)) continue; // ya resuelto en el paso 1
+    scanUses(b.name, b.body);
+  }
+  // sustitución en el propio `out`, de atrás hacia delante (por posición de
+  // cuerpo, no de bloque completo, para tocar solo el interior de las llaves).
+  for (const b of [...tableBlocks].sort((a, b2) => b2.bodyStart - a.bodyStart)) {
+    if (partialNames.has(b.name)) continue;
+    const newBody = b.body
+      .split("\n")
+      .map((line) => {
+        const im = line.match(injectRe);
+        return im ? resolve(im[1], []) : line;
+      })
+      .join("\n");
+    if (newBody !== b.body)
+      out = out.slice(0, b.bodyStart) + newBody + out.slice(b.bodyEnd);
+  }
 
-  return { text: out, partialNames: new Set(raw.keys()) };
+  return { text: out, partialNames, uses };
 }
 
 export function parseDBML(input: string): Model {
-  const { text, partialNames } = expandTablePartials(stripLineComments(input));
+  const { text, partialNames, uses } = expandTablePartials(
+    stripLineComments(input)
+  );
   const src = text;
   const tables: Table[] = [];
   const refs: Ref[] = [];
@@ -307,8 +375,7 @@ export function parseDBML(input: string): Model {
   // Los TablePartial se escanearon como si fueran tablas (para reusar el
   // parseo de columnas), pero no son tablas reales del diagrama: se separan
   // aquí. Cualquier Ref que involucre a uno de ellos se descarta — un partial
-  // no es un extremo válido de relación, no hay forma de saber qué tabla
-  // consumidora sería el destino real (esto solo ocurre si el partial trae
+  // no es un extremo válido de relación (esto solo ocurre si el partial trae
   // un `ref:` inline en su propia definición, caso excepcional).
   const realTables = tables.filter((t) => !partialNames.has(t.name));
   const partials = tables.filter((t) => partialNames.has(t.name));
@@ -323,7 +390,15 @@ export function parseDBML(input: string): Model {
     if (c) c.fk = true;
   }
 
-  return { tables: realTables, partials, refs: cleanRefs };
+  // filtro defensivo: `uses` se calculó sobre un escaneo de bloques paralelo
+  // al de `tables`/`partials`; esto solo protege contra una divergencia
+  // (p.ej. un bloque malformado que un escaneo aceptó y el otro no).
+  const validNames = new Set([...realTables, ...partials].map((t) => t.name));
+  const cleanUses = uses.filter(
+    (u) => validNames.has(u.from) && partialNames.has(u.to)
+  );
+
+  return { tables: realTables, partials, refs: cleanRefs, uses: cleanUses };
 }
 
 // Reemplaza coincidencias de re en line solo FUERA de cadenas entre comillas

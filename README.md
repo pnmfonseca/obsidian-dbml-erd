@@ -11,14 +11,15 @@ Obsidian plugin that renders ` ```dbml ` code blocks as **interactive entity-rel
 
 ## Fork notes
 
-This is a personal fork ([Pedro Fonseca](https://github.com/pnmdfonseca)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pfonseca`) so the two don't collide.
+This is a personal fork ([Pedro Fonseca](https://github.com/REPLACE_WITH_YOUR_USERNAME)) of the plugin above, currently used and tested privately. It is **not** the plugin published in Obsidian's community plugin list — installed side by side with the original it uses a different plugin ID (`dbml-erd-pacheco`) so the two don't collide.
 
 Added on top of upstream:
 
 - **`@include` directive** — compose a diagram from tables/relationships defined in another `.dbml` file (or another note), e.g. `@include attachments/shared-schema.dbml`. Resolved by textual expansion before parsing, so `Ref:` lines across included files work like any other relationship. Supports nested includes with cycle detection.
+- **`TablePartial` support** — declare a reusable block of columns with `TablePartial name { ... }` and inject it into any table with a bare `~name` line inside the table body. Partials can inject other partials (nested), with cycle detection. Columns arrive in the table in the order they're injected, so cardinality markers and layout are unaffected.
 - **Live auto-reload** — editing an included file updates every open diagram that depends on it, without needing to touch the note itself or reopen it.
 - **Configurable crow's-foot style** — Settings → DBML ER Diagrams → *Crow's foot style*: `Inverted` (fan opens on the entity, unambiguous even on horizontal links) or `Original` (upstream's default geometry, which can read as an arrowhead on horizontal links). Applies live to open diagrams.
-- **External-source edit guard** — renaming/deleting a table or column, changing a type, recoloring a header, or changing a relationship's cardinality now shows a clear notice instead of silently failing when the target is defined in an `@include`d file rather than the block itself.
+- **External-source edit guard** — renaming/deleting a table or column, changing a type, recoloring a header, or changing a relationship's cardinality now shows a clear notice instead of silently failing when the target is defined in an `@include`d file or a `TablePartial` rather than the table's own block.
 
 None of this changes the on-disk format for diagrams that don't use `@include` — existing notes and their `@pos`/`@view`/`@size`/`@edge` annotations keep working as-is.
 
@@ -110,6 +111,7 @@ Ref: contract.client_id > client.client_id
 - Optional `// height: N` directive (canvas height in px).
 - `//` comments.
 - **(fork)** `@include <path>` — expands another `.dbml` file's content in place before parsing. Accepts a bare directive or `// @include <path>`. Path resolves like an Obsidian link (relative to the current note, aware of the attachments folder), falling back to a vault-absolute or note-relative path.
+- **(fork)** `TablePartial name { ... }` + `~name` — reusable column blocks, injected into a table body with a bare `~name` line. Nestable (a partial can inject another); an unresolved `~name` or a cycle is silently dropped, matching this parser's existing behavior for invalid `Ref:` lines.
 
 > A deliberate subset of DBML, enough for controlled schemas. It does not yet include enums, table groups or composite keys.
 

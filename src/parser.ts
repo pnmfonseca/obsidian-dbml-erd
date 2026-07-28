@@ -102,8 +102,67 @@ function matchBrace(src: string, openIdx: number): number {
   return withStr >= 0 ? withStr : scanBrace(src, openIdx, false);
 }
 
+// Expande bloques `TablePartial nombre { ... }` y las líneas de inyección
+// `~nombre` dentro de un `Table { ... }`, por sustitución textual, antes de que
+// el resto de parseDBML escanee las tablas. Así el resto del parser no necesita
+// saber que los partials existen: ve las columnas ya "pegadas" en el orden
+// correcto, y toda la lógica downstream (Refs, FKs, orden de filas) funciona
+// sin cambios. Soporta partials anidados (uno que inyecta a otro) con
+// detección de ciclos; un `~nombre` que no resuelve a ningún partial se borra
+// en silencio (mismo criterio que este parser ya aplica a Refs inválidas).
+export function expandTablePartials(input: string): string {
+  const partialDeclRe =
+    /(?:^|\n)[ \t]*TablePartial[ \t]+"?([A-Za-z0-9_]+)"?\s*\{/g;
+  const raw = new Map<string, string>(); // nombre -> cuerpo crudo (sin expandir)
+  const spans: [number, number][] = []; // [inicio, fin) de cada bloque, a eliminar del texto
+  let m: RegExpExecArray | null;
+  while ((m = partialDeclRe.exec(input)) !== null) {
+    const name = m[1];
+    const braceIdx = m.index + m[0].length - 1;
+    const closeIdx = matchBrace(input, braceIdx);
+    if (closeIdx < 0) continue;
+    raw.set(name, input.slice(braceIdx + 1, closeIdx));
+    spans.push([m.index, closeIdx + 1]);
+    partialDeclRe.lastIndex = closeIdx + 1; // no re-escanear dentro del cuerpo
+  }
+  if (raw.size === 0) return input;
+
+  const injectRe = /^[ \t]*~"?([A-Za-z0-9_]+)"?[ \t]*$/;
+  const resolved = new Map<string, string>();
+  function resolve(name: string, stack: string[]): string {
+    if (resolved.has(name)) return resolved.get(name)!;
+    if (stack.includes(name)) return ""; // ciclo: corta aquí en vez de recursión infinita
+    const body = raw.get(name);
+    if (body === undefined) return ""; // partial inexistente: la línea ~x desaparece
+    const out = body
+      .split("\n")
+      .map((line) => {
+        const im = line.match(injectRe);
+        return im ? resolve(im[1], [...stack, name]) : line;
+      })
+      .join("\n");
+    resolved.set(name, out);
+    return out;
+  }
+
+  // 1) quita los bloques TablePartial del texto (de atrás hacia delante, para
+  //    no invalidar los índices de los bloques anteriores)
+  let out = input;
+  for (const [s, e] of [...spans].sort((a, b) => b[0] - a[0]))
+    out = out.slice(0, s) + out.slice(e);
+
+  // 2) sustituye cada línea `~nombre` restante por el cuerpo resuelto
+  return out
+    .split("\n")
+    .map((line) => {
+      const im = line.match(injectRe);
+      return im ? resolve(im[1], []) : line;
+    })
+    .join("\n");
+}
+
 export function parseDBML(input: string): Model {
-  const src = stripLineComments(input);
+  const src = expandTablePartials(stripLineComments(input));
   const tables: Table[] = [];
   const refs: Ref[] = [];
 

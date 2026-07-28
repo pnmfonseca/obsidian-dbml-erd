@@ -44,7 +44,7 @@ const en: Dict = {
   // notices / failures
   locateBlockFail: "DBML ERD: could not locate the block to edit.",
   externalEditWarn:
-    '"{name}" is defined in an included file (@include) and can\'t be edited from this block — edit it in that file.',
+    '"{name}" isn\'t defined directly in this table (it comes from an @include or a TablePartial) and can\'t be edited from here — edit it at its source.',
   externalRelWarn:
     "This relation ({rel}) is defined in an included file (@include) and can't be changed from this block — edit it in that file.",
   // modals
@@ -88,7 +88,7 @@ const es: Dict = {
   changeTypePrompt: "Nuevo tipo de dato",
   locateBlockFail: "DBML ERD: no se pudo ubicar el bloque para editar.",
   externalEditWarn:
-    '"{name}" está definida en un archivo incluido (@include) y no se puede editar desde este bloque — edítala en ese archivo.',
+    '"{name}" no está definida directamente en esta tabla (viene de un @include o de un TablePartial) y no se puede editar desde aquí — edítala en su origen.',
   externalRelWarn:
     "Esta relación ({rel}) está definida en un archivo incluido (@include) y no se puede cambiar desde este bloque — edítala en ese archivo.",
   cancel: "Cancelar",
